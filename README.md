@@ -16,4 +16,13 @@ Ours model and code will be open sourced before May.
 
 ## Citation
 ```
+@misc{zhang2025fantasyidfaceknowledgeenhanced,
+      title={FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation}, 
+      author={Yunpeng Zhang and Qiang Wang and Fan Jiang and Yaqi Fan and Mu Xu and Yonggang Qi},
+      year={2025},
+      eprint={2502.13995},
+      archivePrefix={arXiv},
+      primaryClass={cs.GR},
+      url={https://arxiv.org/abs/2502.13995}, 
+}
 ```
