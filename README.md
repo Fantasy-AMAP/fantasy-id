@@ -1,7 +1,7 @@
 # FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation
 
 [![Home Page](https://img.shields.io/badge/Project-<Website>-blue.svg)](https://fantasy-amap.github.io/fantasy-id/) 
-[![hf_paper](https://img.shields.io/badge/🤗-Paper%20In%20HF-red.svg)]()
+[![hf_paper](https://img.shields.io/badge/🤗-Paper%20In%20HF-red.svg)](https://huggingface.co/papers/2502.13995)
 [![arXiv](https://img.shields.io/badge/Arxiv-2502.13995-b31b1b.svg?logo=arXiv)](https://arxiv.org/pdf/2502.13995) 
 
 ## Abstract
@@ -16,4 +16,13 @@ Ours model and code will be open sourced before May.
 
 ## Citation
 ```
+@misc{zhang2025fantasyidfaceknowledgeenhanced,
+      title={FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation}, 
+      author={Yunpeng Zhang and Qiang Wang and Fan Jiang and Yaqi Fan and Mu Xu and Yonggang Qi},
+      year={2025},
+      eprint={2502.13995},
+      archivePrefix={arXiv},
+      primaryClass={cs.GR},
+      url={https://arxiv.org/abs/2502.13995}, 
+}
 ```
