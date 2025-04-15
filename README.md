@@ -12,9 +12,14 @@
 
 ## Code
 
-Ours model and code will be open sourced before May.
+Ours model and code is comming soon.
+
+## Acknowledgement
+
+Thanks to the following open source libraries: [CogvideoX](https://github.com/THUDM/CogVideo), [DECA](https://github.com/yfeng95/DECA), [ConsisID](https://github.com/PKU-YuanGroup/ConsisID).
 
 ## Citation
+If you find our paper and code useful in your research, please consider giving a star ⭐ and citation 📝.
 ```
 @misc{zhang2025fantasyidfaceknowledgeenhanced,
       title={FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation}, 
