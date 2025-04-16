@@ -16,7 +16,7 @@ Ours model and code is comming soon.
 
 ## Acknowledgement
 
-Thanks to the following open source libraries: [CogvideoX](https://github.com/THUDM/CogVideo), [DECA](https://github.com/yfeng95/DECA), [ConsisID](https://github.com/PKU-YuanGroup/ConsisID).
+Thanks to the following open source libraries: [CogvideoX](https://github.com/THUDM/CogVideo), [DECA](https://github.com/yfeng95/DECA), [CVTHead](https://github.com/HowieMa/CVTHead), [ConsisID](https://github.com/PKU-YuanGroup/ConsisID).
 
 ## Citation
 If you find our paper and code useful in your research, please consider giving a star ⭐ and citation 📝.
