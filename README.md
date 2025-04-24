@@ -22,12 +22,17 @@ pip install -r requirements.txt
 
 ### Download Checkpoints
 
-The weights is available at [ModelScope](https://www.modelscope.cn/models/amap_cvlab/FantasyID/), or you can download it with the following command.
+The weights is available at [ModelScope](https://www.modelscope.cn/models/amap_cvlab/FantasyID/) and [HuggingFace](https://huggingface.co/acvlab/FantasyID), or you can download it with the following command.
 
 ```bash
-# modelscope
+# ModelScope
 pip install modelscope
 modelscope download --model amap_cvlab/FantasyID --local_dir Fantasy-ID
+
+# HuggingFace
+pip install huggingface_hub
+huggingface-cli login  # If it is the first time.
+huggingface-cli repo clone acvlab/FantasyID Fantasy-ID
 ```
 
 ### Inference
