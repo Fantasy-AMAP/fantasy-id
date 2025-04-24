@@ -1,4 +1,5 @@
 # Copyright Alibaba Inc. All Rights Reserved.
+
 import math
 import torch
 import torch.nn as nn
@@ -6,8 +7,9 @@ from einops import rearrange
 from transformers.models.deformable_detr import DeformableDetrConfig
 from models.projectors import CAbstractor
 
-# FFN
+
 def FeedForward(dim, mult=4):
+    # FFN
     inner_dim = int(dim * mult)
     return nn.Sequential(
         nn.LayerNorm(dim),
@@ -50,17 +52,24 @@ class AvgPoolProjector(nn.Module):
         modules = [nn.Linear(self.mm_hidden_size, self.llm_hidden_size)]
         for _ in range(1, self.layer_num):
             modules.append(nn.GELU())
-            modules.append(nn.Linear(self.llm_hidden_size, self.llm_hidden_size))
+            modules.append(
+                nn.Linear(self.llm_hidden_size, self.llm_hidden_size))
         self.mlp_projector = nn.Sequential(*modules)
-        
+
     def forward(self, visual_feat: torch.Tensor, x) -> torch.Tensor:
         batch_size, seq_len, h_dim = visual_feat.shape  # 576
         hw = int(seq_len ** 0.5)  # 24
-        shaped_visual_feat = rearrange(visual_feat, "b (h w) d -> b d h w", h=hw, w=hw)  # torch.Size([64, 1024, 24, 24])
-        pooled_visual_feat = self.sampler(shaped_visual_feat)  # torch.Size([64, 1024, 12, 12])
-        reshaped_visual_feat = rearrange(pooled_visual_feat, "b d h w -> b (h w) d")  # [64, 144, 1024]
-        output_feat = self.mlp_projector(reshaped_visual_feat)  # [64, 144, 4096])
+        # torch.Size([64, 1024, 24, 24])
+        shaped_visual_feat = rearrange(
+            visual_feat, "b (h w) d -> b d h w", h=hw, w=hw)
+        # torch.Size([64, 1024, 12, 12])
+        pooled_visual_feat = self.sampler(shaped_visual_feat)
+        reshaped_visual_feat = rearrange(
+            pooled_visual_feat, "b d h w -> b (h w) d")  # [64, 144, 1024]
+        output_feat = self.mlp_projector(
+            reshaped_visual_feat)  # [64, 144, 4096])
         return output_feat
+
 
 class FaceAbstractor(nn.Module):
     def __init__(
@@ -108,8 +117,9 @@ class FaceAbstractor(nn.Module):
             self.layers.append(
                 nn.ModuleList(
                     [
-                        CAbstractor(None,None),
-                        FeedForward(dim=dim, mult=ff_mult),  # FeedForward layer
+                        CAbstractor(None, None),
+                        # FeedForward layer
+                        FeedForward(dim=dim, mult=ff_mult),
                     ]
                 )
             )
@@ -168,11 +178,11 @@ class FaceAbstractor(nn.Module):
         for i in range(5):
             vit_feature = getattr(self, f'mapping_{i}')(y[i])
             # ctx_feature = torch.cat((x, vit_feature), dim=1)
-            ctx_feature = vit_feature[:,1:]
+            ctx_feature = vit_feature[:, 1:]
 
             # Pass through the PerceiverAttention and FeedForward layers
             for attn, ff in self.layers[i * self.depth: (i + 1) * self.depth]:
-                x2 = attn(ctx_feature)['last_hidden_state'] 
+                x2 = attn(ctx_feature)['last_hidden_state']
                 x2 = ff(x2)
 
         # Retain only the query latents
@@ -181,15 +191,16 @@ class FaceAbstractor(nn.Module):
         # latents = latents @ self.proj_out
         return x2 @ self.proj_out
 
+
 class LayerAttention(nn.Module):
     """
-    
+
     Args:
         dim (int): Dimension of the input latent and output. Default is 3072.
         dim_head (int): Dimension of each attention head. Default is 128.
         heads (int): Number of attention heads. Default is 16.
         kv_dim (int): Dimension of the key/value input, allowing flexible cross-attention. Default is 2048.
-    
+
     Attributes:
         scale (float): Scaling factor used in dot-product attention for numerical stability.
         norm1 (nn.LayerNorm): Layer normalization applied to the input image features.
@@ -199,6 +210,7 @@ class LayerAttention(nn.Module):
         to_out (nn.Linear): Linear layer for outputting the final result after attention.
 
     """
+
     def __init__(self, *, dim=3072, dim_head=128, heads=16, kv_dim=2048):
         super().__init__()
         self.scale = dim_head ** -0.5
@@ -212,7 +224,8 @@ class LayerAttention(nn.Module):
 
         # Linear transformations to produce queries, keys, and values
         self.to_q = nn.Linear(dim, inner_dim, bias=False)
-        self.to_kv = nn.Linear(dim if kv_dim is None else kv_dim, inner_dim * 2, bias=False)
+        self.to_kv = nn.Linear(
+            dim if kv_dim is None else kv_dim, inner_dim * 2, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
     def forward(self, x, latents):
@@ -223,13 +236,13 @@ class LayerAttention(nn.Module):
                 - batch_size (b): Number of samples in the batch.
                 - n1: Sequence length (e.g., number of patches or tokens).
                 - D: Feature dimension.
-            
+
             latents (torch.Tensor): Latent feature representations with shape (batch_size, n2, D), where:
                 - n2: Number of latent elements.
-        
+
         Returns:
             torch.Tensor: Attention-modulated features with shape (batch_size, n2, D).
-        
+
         """
         # Apply layer normalization to the input image and latent features
         x = self.norm1(x)
@@ -248,13 +261,15 @@ class LayerAttention(nn.Module):
 
         # Compute attention weights
         scale = 1 / math.sqrt(math.sqrt(self.dim_head))
-        weight = (q * scale) @ (k * scale).transpose(-2, -1)  # More stable scaling than post-division
+        # More stable scaling than post-division
+        weight = (q * scale) @ (k * scale).transpose(-2, -1)
         weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
 
         # Compute the output via weighted combination of values
         out = weight @ v
 
         # Reshape and permute to prepare for final linear transformation
-        out = out.permute(0, 2, 1, 3).reshape(b, seq_len, -1) #(B, 17550, 2048)
+        out = out.permute(0, 2, 1, 3).reshape(
+            b, seq_len, -1)  # (B, 17550, 2048)
 
-        return self.to_out(out) ##(B, 17550, 2048) -> #(B, 17550, 3072)
+        return self.to_out(out)  # (B, 17550, 2048) -> #(B, 17550, 3072)

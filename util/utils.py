@@ -1,3 +1,5 @@
+# Copyright Alibaba Inc. All Rights Reserved.
+
 import os
 import math
 import tqdm
@@ -17,11 +19,15 @@ import torch.nn.functional as F
 from diffusers.utils import export_to_video
 
 logger = logging.getLogger(__file__)
+
+
 def get_args():
-    parser = argparse.ArgumentParser(description="Simple example of a training script for ID.")
+    parser = argparse.ArgumentParser(
+        description="Simple example of a training script for ID.")
 
     # ID information
-    parser.add_argument("--train_type", choices=['t2v', 'i2v'], help="t2v or i2v")
+    parser.add_argument(
+        "--train_type", choices=['t2v', 'i2v'], help="t2v or i2v")
     parser.add_argument("--is_train_face", action='store_true')
     parser.add_argument("--is_diff_lr", action='store_true')
     parser.add_argument("--is_train_lora", action='store_true')
@@ -38,8 +44,10 @@ def get_args():
     parser.add_argument("--mask_path", type=str, default=None)
     parser.add_argument("--pretrained_weight", type=str, default=None)
     parser.add_argument("--sample_stride", type=int, default=3, help=".")
-    parser.add_argument("--skip_frames_start_percent", type=float, default=0.0, help=".")
-    parser.add_argument("--skip_frames_end_percent", type=float, default=1.0, help=".")
+    parser.add_argument("--skip_frames_start_percent",
+                        type=float, default=0.0, help=".")
+    parser.add_argument("--skip_frames_end_percent",
+                        type=float, default=1.0, help=".")
     parser.add_argument("--miss_tolerance", type=int, default=6)
     parser.add_argument("--min_distance", type=int, default=3)
     parser.add_argument("--min_frames", type=int, default=1)
@@ -49,7 +57,8 @@ def get_args():
     parser.add_argument("--LFE_heads", type=int, default=12)
     parser.add_argument("--cross_attn_interval", type=int, default=1)
 
-    parser.add_argument("--use_ema", action="store_true", help="Whether to use EMA model.")
+    parser.add_argument("--use_ema", action="store_true",
+                        help="Whether to use EMA model.")
     parser.add_argument(
         "--non_ema_revision",
         type=str,
@@ -186,7 +195,8 @@ def get_args():
     )
 
     # Training information
-    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="A seed for reproducible training.")
     parser.add_argument(
         "--rank",
         type=int,
@@ -228,7 +238,8 @@ def get_args():
         default=720,
         help="All input videos are resized to this width.",
     )
-    parser.add_argument("--fps", type=int, default=8, help="All input videos will be used at this FPS.")
+    parser.add_argument("--fps", type=int, default=8,
+                        help="All input videos will be used at this FPS.")
     parser.add_argument(
         "--max_num_frames", type=int, default=49, help="All input videos will be truncated to these many frames."
     )
@@ -325,7 +336,8 @@ def get_args():
         default=1,
         help="Number of hard resets of the lr in cosine_with_restarts scheduler.",
     )
-    parser.add_argument("--lr_power", type=float, default=1.0, help="Power factor of the polynomial scheduler.")
+    parser.add_argument("--lr_power", type=float, default=1.0,
+                        help="Power factor of the polynomial scheduler.")
     parser.add_argument(
         "--enable_slicing",
         action="store_true",
@@ -370,16 +382,20 @@ def get_args():
         default=None,
         help="Coefficients for computing the Prodigy optimizer's stepsize using running averages. If set to None, uses the value of square root of beta2.",
     )
-    parser.add_argument("--prodigy_decouple", action="store_true", help="Use AdamW style decoupled weight decay")
-    parser.add_argument("--adam_weight_decay", type=float, default=1e-04, help="Weight decay to use for unet params")
+    parser.add_argument("--prodigy_decouple", action="store_true",
+                        help="Use AdamW style decoupled weight decay")
+    parser.add_argument("--adam_weight_decay", type=float,
+                        default=1e-04, help="Weight decay to use for unet params")
     parser.add_argument(
         "--adam_epsilon",
         type=float,
         default=1e-08,
         help="Epsilon value for the Adam optimizer and Prodigy optimizers.",
     )
-    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
-    parser.add_argument("--prodigy_use_bias_correction", action="store_true", help="Turn on Adam's bias correction.")
+    parser.add_argument("--max_grad_norm", default=1.0,
+                        type=float, help="Max gradient norm.")
+    parser.add_argument("--prodigy_use_bias_correction",
+                        action="store_true", help="Turn on Adam's bias correction.")
     parser.add_argument(
         "--prodigy_safeguard_warmup",
         action="store_true",
@@ -387,9 +403,12 @@ def get_args():
     )
 
     # Other information
-    parser.add_argument("--tracker_name", type=str, default=None, help="Project tracker name")
-    parser.add_argument("--push_to_hub", action="store_true", help="Whether or not to push the model to the Hub.")
-    parser.add_argument("--hub_token", type=str, default=None, help="The token to use to push to the Model Hub.")
+    parser.add_argument("--tracker_name", type=str,
+                        default=None, help="Project tracker name")
+    parser.add_argument("--push_to_hub", action="store_true",
+                        help="Whether or not to push the model to the Hub.")
+    parser.add_argument("--hub_token", type=str, default=None,
+                        help="The token to use to push to the Model Hub.")
     parser.add_argument(
         "--hub_model_id",
         type=str,
@@ -420,13 +439,15 @@ def get_args():
         ),
     )
     parser.add_argument(
-        '--trainable_modules', 
-        nargs='+', 
+        '--trainable_modules',
+        nargs='+',
         help='Enter a list of trainable modules'
     )
-    parser.add_argument("--nccl_timeout", type=int, default=600, help="NCCL backend timeout in seconds.")
+    parser.add_argument("--nccl_timeout", type=int, default=600,
+                        help="NCCL backend timeout in seconds.")
 
     return parser.parse_args()
+
 
 def resize_mask(mask, latent, process_first_frame_only=True):
     latent_size = latent.size()
@@ -440,7 +461,7 @@ def resize_mask(mask, latent, process_first_frame_only=True):
             mode='trilinear',
             align_corners=False
         )
-        
+
         target_size = list(latent_size[2:])
         target_size[0] = target_size[0] - 1
         if target_size[0] != 0:
@@ -450,7 +471,8 @@ def resize_mask(mask, latent, process_first_frame_only=True):
                 mode='trilinear',
                 align_corners=False
             )
-            resized_mask = torch.cat([first_frame_resized, remaining_frames_resized], dim=2)
+            resized_mask = torch.cat(
+                [first_frame_resized, remaining_frames_resized], dim=2)
         else:
             resized_mask = first_frame_resized
     else:
@@ -463,6 +485,7 @@ def resize_mask(mask, latent, process_first_frame_only=True):
         )
     return resized_mask
 
+
 def save_tensor_as_image(tensor, file_path):
     """
     Saves a PyTorch tensor as an image file.
@@ -473,16 +496,17 @@ def save_tensor_as_image(tensor, file_path):
     """
     # Ensure the tensor is in CPU memory and detach it from the computation graph
     tensor = tensor.cpu().detach()
-    
+
     # Convert from PyTorch to NumPy format, and handle the scaling from [0, 1] to [0, 255]
     tensor = tensor.squeeze()  # Remove unnecessary dimensions if any
     tensor = tensor.permute(1, 2, 0)  # Change from (C, H, W) to (H, W, C)
     tensor = tensor.numpy() * 255  # Scale from [0, 1] to [0, 255]
     tensor = tensor.astype(np.uint8)  # Convert to uint8
-    
+
     # Convert the NumPy array to a PIL Image and save it
     image = Image.fromarray(tensor)
     image.save(file_path)
+
 
 def pixel_values_to_pil(pixel_values, frame_index=0):
     if pixel_values.is_cuda:
@@ -494,6 +518,7 @@ def pixel_values_to_pil(pixel_values, frame_index=0):
     frame_np = frame.numpy()
     image = Image.fromarray(frame_np)
     return image
+
 
 def load_torch_file(ckpt, device=None, dtype=torch.float16):
     if device is None:
@@ -528,7 +553,7 @@ def state_dict_prefix_replace(state_dict, replace_prefix, filter_keys=False):
     for rp in replace_prefix:
         replace = list(
             map(
-                lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp) :])),
+                lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp):])),
                 filter(lambda a: a.startswith(rp), state_dict.keys()),
             )
         )
@@ -558,18 +583,21 @@ def tiled_scale_multidim(
     dims = len(tile)
     print(f"samples dtype:{samples.dtype}")
     output = torch.empty(
-        [samples.shape[0], out_channels] + list(map(lambda a: round(a * upscale_amount), samples.shape[2:])),
+        [samples.shape[0], out_channels] +
+        list(map(lambda a: round(a * upscale_amount), samples.shape[2:])),
         device=output_device,
     )
 
     for b in range(samples.shape[0]):
-        s = samples[b : b + 1]
+        s = samples[b: b + 1]
         out = torch.zeros(
-            [s.shape[0], out_channels] + list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
+            [s.shape[0], out_channels] +
+            list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
             device=output_device,
         )
         out_div = torch.zeros(
-            [s.shape[0], out_channels] + list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
+            [s.shape[0], out_channels] +
+            list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
             device=output_device,
         )
 
@@ -605,7 +633,7 @@ def tiled_scale_multidim(
             if pbar is not None:
                 pbar.update(1)
 
-        output[b : b + 1] = out / out_div
+        output[b: b + 1] = out / out_div
     return output
 
 
@@ -621,7 +649,8 @@ def tiled_scale(
     pbar=None,
 ):
     return tiled_scale_multidim(
-        samples, function, (tile_y, tile_x), overlap, upscale_amount, out_channels, output_device, pbar
+        samples, function, (tile_y,
+                            tile_x), overlap, upscale_amount, out_channels, output_device, pbar
     )
 
 
@@ -636,7 +665,8 @@ def load_sd_upscale(ckpt, inf_device):
 def upscale(upscale_model, tensor: torch.Tensor, inf_device, output_device="cpu") -> torch.Tensor:
     memory_required = module_size(upscale_model.model)
     memory_required += (
-        (512 * 512 * 3) * tensor.element_size() * max(upscale_model.scale, 1.0) * 384.0
+        (512 * 512 * 3) * tensor.element_size() *
+        max(upscale_model.scale, 1.0) * 384.0
     )  # The 384.0 is an estimate of how much some of these models take, TODO: make it more accurate
     memory_required += tensor.nelement() * tensor.element_size()
     print(f"UPScaleMemory required: {memory_required / 1024 / 1024 / 1024} GB")
@@ -669,7 +699,8 @@ def upscale_batch_and_concatenate(upscale_model, latents, inf_device, output_dev
     upscaled_latents = []
     for i in range(latents.size(0)):
         latent = latents[i]
-        upscaled_latent = upscale(upscale_model, latent, inf_device, output_device)
+        upscaled_latent = upscale(
+            upscale_model, latent, inf_device, output_device)
         upscaled_latents.append(upscaled_latent)
     return torch.stack(upscaled_latents)
 
@@ -686,14 +717,16 @@ class ProgressBar:
     def __init__(self, total, desc=None):
         self.total = total
         self.current = 0
-        self.b_unit = tqdm.tqdm(total=total, desc="ProgressBar context index: 0" if desc is None else desc)
+        self.b_unit = tqdm.tqdm(
+            total=total, desc="ProgressBar context index: 0" if desc is None else desc)
 
     def update(self, value):
         if value > self.total:
             value = self.total
         self.current = value
         if self.b_unit is not None:
-            self.b_unit.set_description("ProgressBar context index: {}".format(self.current))
+            self.b_unit.set_description(
+                "ProgressBar context index: {}".format(self.current))
             self.b_unit.refresh()
 
             self.b_unit.update(self.current)
