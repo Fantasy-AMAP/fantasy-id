@@ -1,8 +1,8 @@
 # FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation
 
-[![Home Page](https://img.shields.io/badge/Project-<Website>-blue.svg)](https://fantasy-amap.github.io/fantasy-id/) 
+[![Home Page](https://img.shields.io/badge/Project-<Website>-blue.svg)](https://fantasy-amap.github.io/fantasy-id/)
 [![hf_paper](https://img.shields.io/badge/🤗-Paper%20In%20HF-red.svg)](https://huggingface.co/papers/2502.13995)
-[![arXiv](https://img.shields.io/badge/Arxiv-2502.13995-b31b1b.svg?logo=arXiv)](https://arxiv.org/pdf/2502.13995) 
+[![arXiv](https://img.shields.io/badge/Arxiv-2502.13995-b31b1b.svg?logo=arXiv)](https://arxiv.org/pdf/2502.13995)
 
 ## Abstract
 
@@ -22,17 +22,16 @@ pip install -r requirements.txt
 
 ### Download Checkpoints
 
-The weights is available at [ModelScope](https://www.modelscope.cn/models/amap_cvlab/FantasyID/) and [HuggingFace](https://huggingface.co/acvlab/FantasyID), or you can download it with the following command.
+The weights is available at [HuggingFace](https://huggingface.co/acvlab/FantasyID) and [ModelScope](https://www.modelscope.cn/models/amap_cvlab/FantasyID/), or you can download it with the following command.
 
 ```bash
-# ModelScope
+# huggingface
+# if you are in china mainland, run this first: export HF_ENDPOINT=https://hf-mirror.com
+huggingface-cli download --repo-type model acvlab/FantasyID --local-dir Fantasy-ID
+
+# modelscope
 pip install modelscope
 modelscope download --model amap_cvlab/FantasyID --local_dir Fantasy-ID
-
-# HuggingFace
-pip install huggingface_hub
-huggingface-cli login  # If it is the first time.
-huggingface-cli repo clone acvlab/FantasyID Fantasy-ID
 ```
 
 ### Inference
@@ -53,12 +52,12 @@ Thanks to the following open source libraries: [CogvideoX](https://github.com/TH
 If you find our paper and code useful in your research, please consider giving a star ⭐ and citation 📝.
 ```
 @misc{zhang2025fantasyidfaceknowledgeenhanced,
-      title={FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation}, 
+      title={FantasyID: Face Knowledge Enhanced ID-Preserving Video Generation},
       author={Yunpeng Zhang and Qiang Wang and Fan Jiang and Yaqi Fan and Mu Xu and Yonggang Qi},
       year={2025},
       eprint={2502.13995},
       archivePrefix={arXiv},
       primaryClass={cs.GR},
-      url={https://arxiv.org/abs/2502.13995}, 
+      url={https://arxiv.org/abs/2502.13995},
 }
 ```

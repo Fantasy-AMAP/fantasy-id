@@ -1,10 +1,12 @@
 # Copyright Alibaba Inc. All Rights Reserved.
 
 import math
+
 import torch
 import torch.nn as nn
 from einops import rearrange
 from transformers.models.deformable_detr import DeformableDetrConfig
+
 from models.projectors import CAbstractor
 
 
@@ -46,42 +48,40 @@ class AvgPoolProjector(nn.Module):
         self.build_net()
 
     def build_net(self):
-        hw = int(self.query_num ** 0.5)
+        hw = int(self.query_num**0.5)
         sampler = nn.AdaptiveAvgPool2d((hw, hw))
         self.sampler = sampler
         modules = [nn.Linear(self.mm_hidden_size, self.llm_hidden_size)]
         for _ in range(1, self.layer_num):
             modules.append(nn.GELU())
-            modules.append(
-                nn.Linear(self.llm_hidden_size, self.llm_hidden_size))
+            modules.append(nn.Linear(self.llm_hidden_size, self.llm_hidden_size))
         self.mlp_projector = nn.Sequential(*modules)
 
     def forward(self, visual_feat: torch.Tensor, x) -> torch.Tensor:
         batch_size, seq_len, h_dim = visual_feat.shape  # 576
-        hw = int(seq_len ** 0.5)  # 24
+        hw = int(seq_len**0.5)  # 24
         # torch.Size([64, 1024, 24, 24])
-        shaped_visual_feat = rearrange(
-            visual_feat, "b (h w) d -> b d h w", h=hw, w=hw)
+        shaped_visual_feat = rearrange(visual_feat, "b (h w) d -> b d h w", h=hw, w=hw)
         # torch.Size([64, 1024, 12, 12])
         pooled_visual_feat = self.sampler(shaped_visual_feat)
         reshaped_visual_feat = rearrange(
-            pooled_visual_feat, "b d h w -> b (h w) d")  # [64, 144, 1024]
-        output_feat = self.mlp_projector(
-            reshaped_visual_feat)  # [64, 144, 4096])
+            pooled_visual_feat, "b d h w -> b (h w) d"
+        )  # [64, 144, 1024]
+        output_feat = self.mlp_projector(reshaped_visual_feat)  # [64, 144, 4096])
         return output_feat
 
 
 class FaceAbstractor(nn.Module):
     def __init__(
-            self,
-            dim=1024,
-            depth=10,
-            dim_head=64,
-            heads=16,
-            num_id_token=5,
-            num_queries=144,
-            output_dim=2048,
-            ff_mult=4,
+        self,
+        dim=1024,
+        depth=10,
+        dim_head=64,
+        heads=16,
+        num_id_token=5,
+        num_queries=144,
+        output_dim=2048,
+        ff_mult=4,
     ):
         """
         Initializes the FaceAbstractor class.
@@ -104,7 +104,7 @@ class FaceAbstractor(nn.Module):
         self.num_queries = num_queries
         assert depth % 5 == 0
         self.depth = depth // 5
-        scale = dim ** -0.5
+        scale = dim**-0.5
 
         # Learnable latent query embeddings
         self.latents = nn.Parameter(torch.randn(1, num_queries, dim) * scale)
@@ -128,7 +128,7 @@ class FaceAbstractor(nn.Module):
         for i in range(5):
             setattr(
                 self,
-                f'mapping_{i}',
+                f"mapping_{i}",
                 nn.Sequential(
                     nn.Linear(1024, 1024),
                     nn.LayerNorm(1024),
@@ -176,13 +176,13 @@ class FaceAbstractor(nn.Module):
 
         # Process each of the 5 visual feature inputs
         for i in range(5):
-            vit_feature = getattr(self, f'mapping_{i}')(y[i])
+            vit_feature = getattr(self, f"mapping_{i}")(y[i])
             # ctx_feature = torch.cat((x, vit_feature), dim=1)
             ctx_feature = vit_feature[:, 1:]
 
             # Pass through the PerceiverAttention and FeedForward layers
-            for attn, ff in self.layers[i * self.depth: (i + 1) * self.depth]:
-                x2 = attn(ctx_feature)['last_hidden_state']
+            for attn, ff in self.layers[i * self.depth : (i + 1) * self.depth]:
+                x2 = attn(ctx_feature)["last_hidden_state"]
                 x2 = ff(x2)
 
         # Retain only the query latents
@@ -213,7 +213,7 @@ class LayerAttention(nn.Module):
 
     def __init__(self, *, dim=3072, dim_head=128, heads=16, kv_dim=2048):
         super().__init__()
-        self.scale = dim_head ** -0.5
+        self.scale = dim_head**-0.5
         self.dim_head = dim_head
         self.heads = heads
         inner_dim = dim_head * heads
@@ -225,7 +225,8 @@ class LayerAttention(nn.Module):
         # Linear transformations to produce queries, keys, and values
         self.to_q = nn.Linear(dim, inner_dim, bias=False)
         self.to_kv = nn.Linear(
-            dim if kv_dim is None else kv_dim, inner_dim * 2, bias=False)
+            dim if kv_dim is None else kv_dim, inner_dim * 2, bias=False
+        )
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
     def forward(self, x, latents):
@@ -269,7 +270,6 @@ class LayerAttention(nn.Module):
         out = weight @ v
 
         # Reshape and permute to prepare for final linear transformation
-        out = out.permute(0, 2, 1, 3).reshape(
-            b, seq_len, -1)  # (B, 17550, 2048)
+        out = out.permute(0, 2, 1, 3).reshape(b, seq_len, -1)  # (B, 17550, 2048)
 
         return self.to_out(out)  # (B, 17550, 2048) -> #(B, 17550, 3072)

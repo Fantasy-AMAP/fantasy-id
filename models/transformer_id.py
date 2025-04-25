@@ -4,38 +4,49 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Dict, Optional, Tuple, Union
+import glob
+import json
 import os
 import sys
-import json
-import glob
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
-from torch import nn
-from einops import rearrange, reduce
-
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.loaders import PeftAdapterMixin
-from diffusers.utils import USE_PEFT_BACKEND, is_torch_version, logging, scale_lora_layers, unscale_lora_layers
-from diffusers.utils.torch_utils import maybe_allow_in_graph
 from diffusers.models.attention import Attention, FeedForward
-from diffusers.models.attention_processor import AttentionProcessor, CogVideoXAttnProcessor2_0, FusedCogVideoXAttnProcessor2_0
-from diffusers.models.embeddings import CogVideoXPatchEmbed, TimestepEmbedding, Timesteps
+from diffusers.models.attention_processor import (
+    AttentionProcessor,
+    CogVideoXAttnProcessor2_0,
+    FusedCogVideoXAttnProcessor2_0,
+)
+from diffusers.models.embeddings import (
+    CogVideoXPatchEmbed,
+    TimestepEmbedding,
+    Timesteps,
+)
 from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.normalization import AdaLayerNorm, CogVideoXLayerNormZero
+from diffusers.utils import (
+    USE_PEFT_BACKEND,
+    is_torch_version,
+    logging,
+    scale_lora_layers,
+    unscale_lora_layers,
+)
+from diffusers.utils.torch_utils import maybe_allow_in_graph
+from einops import rearrange, reduce
+from torch import nn
 
-import os
-import sys
 current_file_path = os.path.abspath(__file__)
 project_roots = [os.path.dirname(current_file_path)]
 for project_root in project_roots:
     sys.path.insert(0, project_root) if project_root not in sys.path else None
 
-from face_abstractor import LayerAttention
-from face_abstractor import FaceAbstractor
-import open3d as o3d
 import numpy as np
+import open3d as o3d
+from face_abstractor import FaceAbstractor, LayerAttention
+
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -95,7 +106,9 @@ class CogVideoXBlock(nn.Module):
         super().__init__()
 
         # 1. Self Attention
-        self.norm1 = CogVideoXLayerNormZero(time_embed_dim, dim, norm_elementwise_affine, norm_eps, bias=True)
+        self.norm1 = CogVideoXLayerNormZero(
+            time_embed_dim, dim, norm_elementwise_affine, norm_eps, bias=True
+        )
 
         self.attn1 = Attention(
             query_dim=dim,
@@ -109,7 +122,9 @@ class CogVideoXBlock(nn.Module):
         )
 
         # 2. Feed Forward
-        self.norm2 = CogVideoXLayerNormZero(time_embed_dim, dim, norm_elementwise_affine, norm_eps, bias=True)
+        self.norm2 = CogVideoXLayerNormZero(
+            time_embed_dim, dim, norm_elementwise_affine, norm_eps, bias=True
+        )
 
         self.ff = FeedForward(
             dim,
@@ -130,24 +145,26 @@ class CogVideoXBlock(nn.Module):
         text_seq_length = encoder_hidden_states.size(1)
 
         # norm & modulate
-        norm_hidden_states, norm_encoder_hidden_states, gate_msa, enc_gate_msa = self.norm1(
-            hidden_states, encoder_hidden_states, temb
-        )
+        (
+            norm_hidden_states,
+            norm_encoder_hidden_states,
+            gate_msa,
+            enc_gate_msa,
+        ) = self.norm1(hidden_states, encoder_hidden_states, temb)
 
         # insert here
         # pass
-        def hook_function(name,output_dir, detach=True):
+        def hook_function(name, output_dir, detach=True):
             def forward_hook(module, input, output):
-                print('hook here')
+                print("hook here")
                 print(input.shape)
                 print(output.shape)
                 if hasattr(module.processor, "attn_map_all"):
-
                     timestep = module.processor.timestep
                     timestep_dir = os.path.join(output_dir, str(timestep))
                     layer_dir = os.path.join(timestep_dir, str(name))
                     os.makedirs(layer_dir, exist_ok=True)
-                    
+
                     if detach:
                         attn_map_all = module.processor.attn_map_all.cpu()
                         attn_map_t2v = module.processor.attn_map_t2v.cpu()
@@ -159,11 +176,23 @@ class CogVideoXBlock(nn.Module):
                         attn_map_t2t = module.processor.attn_map_t2t
                         attn_map_v2v = module.processor.attn_map_v2v
 
-                    torch.save(attn_map_all, os.path.join(layer_dir, f'{name}_attn_map_all.pth'))
-                    torch.save(attn_map_t2t, os.path.join(layer_dir, f'{name}_attn_map_t2t.pth'))
-                    torch.save(attn_map_v2v, os.path.join(layer_dir, f'{name}_attn_map_v2v.pth'))
-                    torch.save(attn_map_t2v, os.path.join(layer_dir, f'{name}_attn_map_t2v.pth'))
-                    
+                    torch.save(
+                        attn_map_all,
+                        os.path.join(layer_dir, f"{name}_attn_map_all.pth"),
+                    )
+                    torch.save(
+                        attn_map_t2t,
+                        os.path.join(layer_dir, f"{name}_attn_map_t2t.pth"),
+                    )
+                    torch.save(
+                        attn_map_v2v,
+                        os.path.join(layer_dir, f"{name}_attn_map_v2v.pth"),
+                    )
+                    torch.save(
+                        attn_map_t2v,
+                        os.path.join(layer_dir, f"{name}_attn_map_t2v.pth"),
+                    )
+
                     del module.processor.attn_map_all
                     del module.processor.attn_map_t2v
                     del module.processor.attn_map_t2t
@@ -171,7 +200,9 @@ class CogVideoXBlock(nn.Module):
 
             return forward_hook
 
-        def register_cross_attention_hook(model, hook_function, target_name, output_dir):
+        def register_cross_attention_hook(
+            model, hook_function, target_name, output_dir
+        ):
             for name, module in model.named_modules():
                 if not name.endswith(target_name):
                     continue
@@ -180,11 +211,12 @@ class CogVideoXBlock(nn.Module):
                     module.processor.store_attn_map = True
 
                 hook = module.register_forward_hook(hook_function(name, output_dir))
-            
+
             return model
+
         # register_cross_attention_hook(self,hook_function,'attn1', 't')
         # attention
-        
+
         attn_hidden_states, attn_encoder_hidden_states = self.attn1(
             hidden_states=norm_hidden_states,
             encoder_hidden_states=norm_encoder_hidden_states,
@@ -192,19 +224,28 @@ class CogVideoXBlock(nn.Module):
         )
 
         hidden_states = hidden_states + gate_msa * attn_hidden_states
-        encoder_hidden_states = encoder_hidden_states + enc_gate_msa * attn_encoder_hidden_states
-
-        # norm & modulate
-        norm_hidden_states, norm_encoder_hidden_states, gate_ff, enc_gate_ff = self.norm2(
-            hidden_states, encoder_hidden_states, temb
+        encoder_hidden_states = (
+            encoder_hidden_states + enc_gate_msa * attn_encoder_hidden_states
         )
 
+        # norm & modulate
+        (
+            norm_hidden_states,
+            norm_encoder_hidden_states,
+            gate_ff,
+            enc_gate_ff,
+        ) = self.norm2(hidden_states, encoder_hidden_states, temb)
+
         # feed-forward
-        norm_hidden_states = torch.cat([norm_encoder_hidden_states, norm_hidden_states], dim=1)
+        norm_hidden_states = torch.cat(
+            [norm_encoder_hidden_states, norm_hidden_states], dim=1
+        )
         ff_output = self.ff(norm_hidden_states)
 
         hidden_states = hidden_states + gate_ff * ff_output[:, text_seq_length:]
-        encoder_hidden_states = encoder_hidden_states + enc_gate_ff * ff_output[:, :text_seq_length]
+        encoder_hidden_states = (
+            encoder_hidden_states + enc_gate_ff * ff_output[:, :text_seq_length]
+        )
 
         return hidden_states, encoder_hidden_states
 
@@ -332,7 +373,9 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
 
         # 2. Time embeddings
         self.time_proj = Timesteps(inner_dim, flip_sin_to_cos, freq_shift)
-        self.time_embedding = TimestepEmbedding(inner_dim, time_embed_dim, timestep_activation_fn)
+        self.time_embedding = TimestepEmbedding(
+            inner_dim, time_embed_dim, timestep_activation_fn
+        )
 
         # 3. Define spatio-temporal transformers blocks
         self.transformer_blocks = nn.ModuleList(
@@ -390,28 +433,36 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         weight_dtype = next(self.transformer_blocks.parameters()).dtype
         self.face_abstractor = FaceAbstractor()
 
-        from models.vertex_encode import VertexSpiralNet, Conv1DReducer4
-        
+        from models.vertex_encode import Conv1DReducer4, VertexSpiralNet
+
         self.vertex_spiral_net = VertexSpiralNet()
         self.vertex_spiral_net.to(device)
         self.vertex_reducer = Conv1DReducer4()
 
         self.face_abstractor.to(device, dtype=weight_dtype)
-        self.layer_attention = nn.ModuleList([
-            LayerAttention(dim=self.inner_dim, dim_head=128, heads=16, kv_dim=self.LFE_final_output_dim).to(device, dtype=weight_dtype) for _ in range(self.num_ca)
-        ])
+        self.layer_attention = nn.ModuleList(
+            [
+                LayerAttention(
+                    dim=self.inner_dim,
+                    dim_head=128,
+                    heads=16,
+                    kv_dim=self.LFE_final_output_dim,
+                ).to(device, dtype=weight_dtype)
+                for _ in range(self.num_ca)
+            ]
+        )
 
     def save_face_modules(self, path: str):
         save_dict = {
-            'face_abstractor': self.face_abstractor.state_dict(),
-            'layer_attention': [ca.state_dict() for ca in self.layer_attention],
+            "face_abstractor": self.face_abstractor.state_dict(),
+            "layer_attention": [ca.state_dict() for ca in self.layer_attention],
         }
         torch.save(save_dict, path)
 
     def load_face_modules(self, path: str):
         checkpoint = torch.load(path, map_location=self.device)
-        self.face_abstractor.load_state_dict(checkpoint['face_abstractor'])
-        for ca, state_dict in zip(self.layer_attention, checkpoint['layer_attention']):
+        self.face_abstractor.load_state_dict(checkpoint["face_abstractor"])
+        for ca, state_dict in zip(self.layer_attention, checkpoint["layer_attention"]):
             ca.load_state_dict(state_dict)
 
     @property
@@ -425,7 +476,11 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         # set recursively
         processors = {}
 
-        def fn_recursive_add_processors(name: str, module: torch.nn.Module, processors: Dict[str, AttentionProcessor]):
+        def fn_recursive_add_processors(
+            name: str,
+            module: torch.nn.Module,
+            processors: Dict[str, AttentionProcessor],
+        ):
             if hasattr(module, "get_processor"):
                 processors[f"{name}.processor"] = module.get_processor()
 
@@ -440,7 +495,9 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         return processors
 
     # Copied from diffusers.models.unets.unet_2d_condition.UNet2DConditionModel.set_attn_processor
-    def set_attn_processor(self, processor: Union[AttentionProcessor, Dict[str, AttentionProcessor]]):
+    def set_attn_processor(
+        self, processor: Union[AttentionProcessor, Dict[str, AttentionProcessor]]
+    ):
         r"""
         Sets the attention processor to use to compute attention.
 
@@ -490,7 +547,9 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
 
         for _, attn_processor in self.attn_processors.items():
             if "Added" in str(attn_processor.__class__.__name__):
-                raise ValueError("`fuse_qkv_projections()` is not supported for models having added KV projections.")
+                raise ValueError(
+                    "`fuse_qkv_projections()` is not supported for models having added KV projections."
+                )
 
         self.original_attn_processors = self.attn_processors
 
@@ -522,26 +581,30 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         timestep_cond: Optional[torch.Tensor] = None,
         image_rotary_emb: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         attention_kwargs: Optional[Dict[str, Any]] = None,
-        id_cond: Optional[torch.Tensor] = None, 
+        id_cond: Optional[torch.Tensor] = None,
         id_vit_hidden: Optional[torch.Tensor] = None,
-        extra_face = None,
+        extra_face=None,
         return_dict: bool = True,
     ):
         # fuse clip and insightface
         if self.is_train_face:
             assert id_cond is not None and id_vit_hidden is not None
-            valid_face_emb = self.face_abstractor(id_cond, id_vit_hidden)  # torch.Size([1, 1280]), list[5](torch.Size([1, 577, 1024]))  ->  torch.Size([1, 32, 2048])
+            valid_face_emb = self.face_abstractor(
+                id_cond, id_vit_hidden
+            )  # torch.Size([1, 1280]), list[5](torch.Size([1, 577, 1024]))  ->  torch.Size([1, 32, 2048])
 
             vertices = extra_face
-            vertices = vertices.to(hidden_states.device,dtype=torch.float)
+            vertices = vertices.to(hidden_states.device, dtype=torch.float)
             # vertices = vertices.to(hidden_states.device, dtype=hidden_states.dtype).unsqueeze(0)
             self.vertex_spiral_net.to(dtype=torch.float)
-            valid_vertex_emb = self.vertex_spiral_net(vertices, valid_face_emb.to(dtype=vertices.dtype))
+            valid_vertex_emb = self.vertex_spiral_net(
+                vertices, valid_face_emb.to(dtype=vertices.dtype)
+            )
             valid_vertex_emb = valid_vertex_emb.to(dtype=hidden_states.dtype)
 
-            valid_vertex_emb = rearrange(valid_vertex_emb, 'b l c -> b c l')
+            valid_vertex_emb = rearrange(valid_vertex_emb, "b l c -> b c l")
             valid_vertex_emb = self.vertex_reducer(valid_vertex_emb)
-            valid_vertex_emb = rearrange(valid_vertex_emb, 'b c l -> b l c')
+            valid_vertex_emb = rearrange(valid_vertex_emb, "b c l -> b l c")
 
         if attention_kwargs is not None:
             attention_kwargs = attention_kwargs.copy()
@@ -563,12 +626,20 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
 
         # 2. Patch embedding
         # torch.Size([1, 226, 4096])   torch.Size([1, 13, 32, 60, 90])
-        hidden_states = self.patch_embed(encoder_hidden_states, hidden_states)  # torch.Size([1, 17776, 3072])
-        hidden_states = self.embedding_dropout(hidden_states)  # torch.Size([1, 17776, 3072])
+        hidden_states = self.patch_embed(
+            encoder_hidden_states, hidden_states
+        )  # torch.Size([1, 17776, 3072])
+        hidden_states = self.embedding_dropout(
+            hidden_states
+        )  # torch.Size([1, 17776, 3072])
 
         text_seq_length = encoder_hidden_states.shape[1]
-        encoder_hidden_states = hidden_states[:, :text_seq_length]  # torch.Size([1, 226, 3072])
-        hidden_states = hidden_states[:, text_seq_length:]   # torch.Size([1, 17550, 3072])
+        encoder_hidden_states = hidden_states[
+            :, :text_seq_length
+        ]  # torch.Size([1, 226, 3072])
+        hidden_states = hidden_states[
+            :, text_seq_length:
+        ]  # torch.Size([1, 17550, 3072])
 
         # 3. Transformer blocks
         ca_idx = 0
@@ -581,8 +652,13 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
 
                     return custom_forward
 
-                ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
-                hidden_states, encoder_hidden_states = torch.utils.checkpoint.checkpoint(
+                ckpt_kwargs: Dict[str, Any] = (
+                    {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
+                )
+                (
+                    hidden_states,
+                    encoder_hidden_states,
+                ) = torch.utils.checkpoint.checkpoint(
                     create_custom_forward(block),
                     hidden_states,
                     encoder_hidden_states,
@@ -609,7 +685,9 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
                         # mv_face_emb = torch.cat([valid_face_emb, valid_face_emb2], dim=1)
                     # mv_face_emb = torch.randn([1,144,2048]).to(hidden_states.device, hidden_states.dtype)
                     mixed23 = torch.cat([mv_face_emb, valid_vertex_emb], dim=1)
-                    hidden_states = hidden_states + self.layer_attention[ca_idx](mixed23, hidden_states)                
+                    hidden_states = hidden_states + self.layer_attention[ca_idx](
+                        mixed23, hidden_states
+                    )
 
                     ca_idx += 1
 
@@ -631,7 +709,9 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         #   - It is okay to `channels` use for CogVideoX-2b and CogVideoX-5b (number of input channels is equal to output channels)
         #   - However, for CogVideoX-5b-I2V also takes concatenated input image latents (number of input channels is twice the output channels)
         p = self.config.patch_size
-        output = hidden_states.reshape(batch_size, num_frames, height // p, width // p, -1, p, p)
+        output = hidden_states.reshape(
+            batch_size, num_frames, height // p, width // p, -1, p, p
+        )
         output = output.permute(0, 1, 4, 2, 5, 3, 6).flatten(5, 6).flatten(3, 4)
 
         if USE_PEFT_BACKEND:
@@ -641,17 +721,27 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         if not return_dict:
             return (output,)
         return Transformer2DModelOutput(sample=output)
-    
+
     @classmethod
-    def from_pretrained_cus(cls, pretrained_model_path, subfolder=None, config_path=None, transformer_additional_kwargs={}):
+    def from_pretrained_cus(
+        cls,
+        pretrained_model_path,
+        subfolder=None,
+        config_path=None,
+        transformer_additional_kwargs={},
+    ):
         if subfolder:
             config_path = config_path or pretrained_model_path
-            config_file = os.path.join(config_path, subfolder, 'config.json')
+            config_file = os.path.join(config_path, subfolder, "config.json")
             pretrained_model_path = os.path.join(pretrained_model_path, subfolder)
         else:
-            config_file = os.path.join(config_path or pretrained_model_path, 'config.json')
+            config_file = os.path.join(
+                config_path or pretrained_model_path, "config.json"
+            )
 
-        print(f"Loading 3D transformer's pretrained weights from {pretrained_model_path} ...")
+        print(
+            f"Loading 3D transformer's pretrained weights from {pretrained_model_path} ..."
+        )
 
         # Check if config file exists
         if not os.path.isfile(config_file):
@@ -662,6 +752,7 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
             config = json.load(f)
 
         from diffusers.utils import WEIGHTS_NAME
+
         model = cls.from_config(config, **transformer_additional_kwargs)
         model_file = os.path.join(pretrained_model_path, WEIGHTS_NAME)
         model_file_safetensors = model_file.replace(".bin", ".safetensors")
@@ -669,46 +760,81 @@ class IDTransformer3DModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
             state_dict = torch.load(model_file, map_location="cpu")
         elif os.path.exists(model_file_safetensors):
             from safetensors.torch import load_file
+
             state_dict = load_file(model_file_safetensors)
         else:
             from safetensors.torch import load_file
-            model_files_safetensors = glob.glob(os.path.join(pretrained_model_path, "*.safetensors"))
+
+            model_files_safetensors = glob.glob(
+                os.path.join(pretrained_model_path, "*.safetensors")
+            )
             state_dict = {}
             for model_file_safetensors in model_files_safetensors:
                 _state_dict = load_file(model_file_safetensors)
                 for key in _state_dict:
                     state_dict[key] = _state_dict[key]
 
-        if model.state_dict()['patch_embed.proj.weight'].size() != state_dict['patch_embed.proj.weight'].size():
-            new_shape   = model.state_dict()['patch_embed.proj.weight'].size()
+        if (
+            model.state_dict()["patch_embed.proj.weight"].size()
+            != state_dict["patch_embed.proj.weight"].size()
+        ):
+            new_shape = model.state_dict()["patch_embed.proj.weight"].size()
             if len(new_shape) == 5:
-                state_dict['patch_embed.proj.weight'] = state_dict['patch_embed.proj.weight'].unsqueeze(2).expand(new_shape).clone()
-                state_dict['patch_embed.proj.weight'][:, :, :-1] = 0
+                state_dict["patch_embed.proj.weight"] = (
+                    state_dict["patch_embed.proj.weight"]
+                    .unsqueeze(2)
+                    .expand(new_shape)
+                    .clone()
+                )
+                state_dict["patch_embed.proj.weight"][:, :, :-1] = 0
             else:
-                if model.state_dict()['patch_embed.proj.weight'].size()[1] > state_dict['patch_embed.proj.weight'].size()[1]:
-                    model.state_dict()['patch_embed.proj.weight'][:, :state_dict['patch_embed.proj.weight'].size()[1], :, :] = state_dict['patch_embed.proj.weight']
-                    model.state_dict()['patch_embed.proj.weight'][:, state_dict['patch_embed.proj.weight'].size()[1]:, :, :] = 0
-                    state_dict['patch_embed.proj.weight'] = model.state_dict()['patch_embed.proj.weight']
+                if (
+                    model.state_dict()["patch_embed.proj.weight"].size()[1]
+                    > state_dict["patch_embed.proj.weight"].size()[1]
+                ):
+                    model.state_dict()["patch_embed.proj.weight"][
+                        :, : state_dict["patch_embed.proj.weight"].size()[1], :, :
+                    ] = state_dict["patch_embed.proj.weight"]
+                    model.state_dict()["patch_embed.proj.weight"][
+                        :, state_dict["patch_embed.proj.weight"].size()[1] :, :, :
+                    ] = 0
+                    state_dict["patch_embed.proj.weight"] = model.state_dict()[
+                        "patch_embed.proj.weight"
+                    ]
                 else:
-                    model.state_dict()['patch_embed.proj.weight'][:, :, :, :] = state_dict['patch_embed.proj.weight'][:, :model.state_dict()['patch_embed.proj.weight'].size()[1], :, :]
-                    state_dict['patch_embed.proj.weight'] = model.state_dict()['patch_embed.proj.weight']
+                    model.state_dict()["patch_embed.proj.weight"][
+                        :, :, :, :
+                    ] = state_dict["patch_embed.proj.weight"][
+                        :,
+                        : model.state_dict()["patch_embed.proj.weight"].size()[1],
+                        :,
+                        :,
+                    ]
+                    state_dict["patch_embed.proj.weight"] = model.state_dict()[
+                        "patch_embed.proj.weight"
+                    ]
 
-        tmp_state_dict = {} 
+        tmp_state_dict = {}
         for key in state_dict:
-            if key in model.state_dict().keys() and model.state_dict()[key].size() == state_dict[key].size():
+            if (
+                key in model.state_dict().keys()
+                and model.state_dict()[key].size() == state_dict[key].size()
+            ):
                 tmp_state_dict[key] = state_dict[key]
             else:
                 print(key, "Size don't match, skip")
         state_dict = tmp_state_dict
-        
+
         m, u = model.load_state_dict(state_dict, strict=False)
         print(f"### missing keys: {len(m)}; \n### unexpected keys: {len(u)};")
         print(m)
-        
+
         params = [p.numel() if "mamba" in n else 0 for n, p in model.named_parameters()]
         print(f"### Mamba Parameters: {sum(params) / 1e6} M")
 
-        params = [p.numel() if "attn1." in n else 0 for n, p in model.named_parameters()]
+        params = [
+            p.numel() if "attn1." in n else 0 for n, p in model.named_parameters()
+        ]
         print(f"### attn1 Parameters: {sum(params) / 1e6} M")
-        
+
         return model

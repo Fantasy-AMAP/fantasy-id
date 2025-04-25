@@ -1,53 +1,53 @@
 # Copyright Alibaba Inc. All Rights Reserved.
 
-import os
-import math
-import tqdm
-import logging
 import argparse
 import itertools
-import PIL.Image
-import numpy as np
-from PIL import Image
-import safetensors.torch
+import logging
+import math
+import os
 from datetime import datetime
-from typing import Union, List
-from spandrel import ModelLoader
+from typing import List, Union
 
+import numpy as np
+import PIL.Image
+import safetensors.torch
 import torch
 import torch.nn.functional as F
+import tqdm
 from diffusers.utils import export_to_video
+from PIL import Image
+from spandrel import ModelLoader
 
 logger = logging.getLogger(__file__)
 
 
 def get_args():
     parser = argparse.ArgumentParser(
-        description="Simple example of a training script for ID.")
+        description="Simple example of a training script for ID."
+    )
 
     # ID information
-    parser.add_argument(
-        "--train_type", choices=['t2v', 'i2v'], help="t2v or i2v")
-    parser.add_argument("--is_train_face", action='store_true')
-    parser.add_argument("--is_diff_lr", action='store_true')
-    parser.add_argument("--is_train_lora", action='store_true')
-    parser.add_argument("--is_kps", action='store_true')
-    parser.add_argument("--is_shuffle_data", action='store_true')
-    parser.add_argument("--enable_mask_loss", action='store_true')
-    parser.add_argument("--is_single_face", action='store_true')
-    parser.add_argument("--is_cross_face", action='store_true')
-    parser.add_argument("--is_align_face", action='store_true')
-    parser.add_argument("--is_reserve_face", action='store_true')
-    parser.add_argument("--is_accelerator_state_dict", action='store_true')
-    parser.add_argument("--is_validation", action='store_true')
+    parser.add_argument("--train_type", choices=["t2v", "i2v"], help="t2v or i2v")
+    parser.add_argument("--is_train_face", action="store_true")
+    parser.add_argument("--is_diff_lr", action="store_true")
+    parser.add_argument("--is_train_lora", action="store_true")
+    parser.add_argument("--is_kps", action="store_true")
+    parser.add_argument("--is_shuffle_data", action="store_true")
+    parser.add_argument("--enable_mask_loss", action="store_true")
+    parser.add_argument("--is_single_face", action="store_true")
+    parser.add_argument("--is_cross_face", action="store_true")
+    parser.add_argument("--is_align_face", action="store_true")
+    parser.add_argument("--is_reserve_face", action="store_true")
+    parser.add_argument("--is_accelerator_state_dict", action="store_true")
+    parser.add_argument("--is_validation", action="store_true")
     parser.add_argument("--config_path", type=str, default=None)
     parser.add_argument("--mask_path", type=str, default=None)
     parser.add_argument("--pretrained_weight", type=str, default=None)
     parser.add_argument("--sample_stride", type=int, default=3, help=".")
-    parser.add_argument("--skip_frames_start_percent",
-                        type=float, default=0.0, help=".")
-    parser.add_argument("--skip_frames_end_percent",
-                        type=float, default=1.0, help=".")
+    parser.add_argument(
+        "--skip_frames_start_percent", type=float, default=0.0, help="."
+    )
+    parser.add_argument("--skip_frames_end_percent", type=float, default=1.0, help=".")
     parser.add_argument("--miss_tolerance", type=int, default=6)
     parser.add_argument("--min_distance", type=int, default=3)
     parser.add_argument("--min_frames", type=int, default=1)
@@ -57,8 +57,9 @@ def get_args():
     parser.add_argument("--LFE_heads", type=int, default=12)
     parser.add_argument("--cross_attn_interval", type=int, default=1)
 
-    parser.add_argument("--use_ema", action="store_true",
-                        help="Whether to use EMA model.")
+    parser.add_argument(
+        "--use_ema", action="store_true", help="Whether to use EMA model."
+    )
     parser.add_argument(
         "--non_ema_revision",
         type=str,
@@ -134,7 +135,10 @@ def get_args():
         help="The column of the dataset containing the instance prompt for each video. Or, the name of the file in `--instance_data_root` folder containing the line-separated instance prompts.",
     )
     parser.add_argument(
-        "--id_token", type=str, default=None, help="Identifier token appended to the start of each prompt if provided."
+        "--id_token",
+        type=str,
+        default=None,
+        help="Identifier token appended to the start of each prompt if provided.",
     )
     parser.add_argument(
         "--dataloader_num_workers",
@@ -195,8 +199,9 @@ def get_args():
     )
 
     # Training information
-    parser.add_argument("--seed", type=int, default=None,
-                        help="A seed for reproducible training.")
+    parser.add_argument(
+        "--seed", type=int, default=None, help="A seed for reproducible training."
+    )
     parser.add_argument(
         "--rank",
         type=int,
@@ -207,7 +212,9 @@ def get_args():
         "--lora_alpha",
         type=float,
         default=128,
-        help=("The scaling factor to scale LoRA weight update. The actual scaling factor is `lora_alpha / rank`"),
+        help=(
+            "The scaling factor to scale LoRA weight update. The actual scaling factor is `lora_alpha / rank`"
+        ),
     )
     parser.add_argument(
         "--mixed_precision",
@@ -238,10 +245,14 @@ def get_args():
         default=720,
         help="All input videos are resized to this width.",
     )
-    parser.add_argument("--fps", type=int, default=8,
-                        help="All input videos will be used at this FPS.")
     parser.add_argument(
-        "--max_num_frames", type=int, default=49, help="All input videos will be truncated to these many frames."
+        "--fps", type=int, default=8, help="All input videos will be used at this FPS."
+    )
+    parser.add_argument(
+        "--max_num_frames",
+        type=int,
+        default=49,
+        help="All input videos will be truncated to these many frames.",
     )
     parser.add_argument(
         "--skip_frames_start",
@@ -261,7 +272,10 @@ def get_args():
         help="whether to randomly flip videos horizontally",
     )
     parser.add_argument(
-        "--train_batch_size", type=int, default=4, help="Batch size (per device) for the training dataloader."
+        "--train_batch_size",
+        type=int,
+        default=4,
+        help="Batch size (per device) for the training dataloader.",
     )
     parser.add_argument("--num_train_epochs", type=int, default=1)
     parser.add_argument(
@@ -328,7 +342,10 @@ def get_args():
         ),
     )
     parser.add_argument(
-        "--lr_warmup_steps", type=int, default=500, help="Number of steps for the warmup in the lr scheduler."
+        "--lr_warmup_steps",
+        type=int,
+        default=500,
+        help="Number of steps for the warmup in the lr scheduler.",
     )
     parser.add_argument(
         "--lr_num_cycles",
@@ -336,8 +353,12 @@ def get_args():
         default=1,
         help="Number of hard resets of the lr in cosine_with_restarts scheduler.",
     )
-    parser.add_argument("--lr_power", type=float, default=1.0,
-                        help="Power factor of the polynomial scheduler.")
+    parser.add_argument(
+        "--lr_power",
+        type=float,
+        default=1.0,
+        help="Power factor of the polynomial scheduler.",
+    )
     parser.add_argument(
         "--enable_slicing",
         action="store_true",
@@ -371,10 +392,16 @@ def get_args():
         help="Whether or not to use 8-bit Adam from bitsandbytes. Ignored if optimizer is not set to AdamW",
     )
     parser.add_argument(
-        "--adam_beta1", type=float, default=0.9, help="The beta1 parameter for the Adam and Prodigy optimizers."
+        "--adam_beta1",
+        type=float,
+        default=0.9,
+        help="The beta1 parameter for the Adam and Prodigy optimizers.",
     )
     parser.add_argument(
-        "--adam_beta2", type=float, default=0.95, help="The beta2 parameter for the Adam and Prodigy optimizers."
+        "--adam_beta2",
+        type=float,
+        default=0.95,
+        help="The beta2 parameter for the Adam and Prodigy optimizers.",
     )
     parser.add_argument(
         "--prodigy_beta3",
@@ -382,20 +409,31 @@ def get_args():
         default=None,
         help="Coefficients for computing the Prodigy optimizer's stepsize using running averages. If set to None, uses the value of square root of beta2.",
     )
-    parser.add_argument("--prodigy_decouple", action="store_true",
-                        help="Use AdamW style decoupled weight decay")
-    parser.add_argument("--adam_weight_decay", type=float,
-                        default=1e-04, help="Weight decay to use for unet params")
+    parser.add_argument(
+        "--prodigy_decouple",
+        action="store_true",
+        help="Use AdamW style decoupled weight decay",
+    )
+    parser.add_argument(
+        "--adam_weight_decay",
+        type=float,
+        default=1e-04,
+        help="Weight decay to use for unet params",
+    )
     parser.add_argument(
         "--adam_epsilon",
         type=float,
         default=1e-08,
         help="Epsilon value for the Adam optimizer and Prodigy optimizers.",
     )
-    parser.add_argument("--max_grad_norm", default=1.0,
-                        type=float, help="Max gradient norm.")
-    parser.add_argument("--prodigy_use_bias_correction",
-                        action="store_true", help="Turn on Adam's bias correction.")
+    parser.add_argument(
+        "--max_grad_norm", default=1.0, type=float, help="Max gradient norm."
+    )
+    parser.add_argument(
+        "--prodigy_use_bias_correction",
+        action="store_true",
+        help="Turn on Adam's bias correction.",
+    )
     parser.add_argument(
         "--prodigy_safeguard_warmup",
         action="store_true",
@@ -403,12 +441,20 @@ def get_args():
     )
 
     # Other information
-    parser.add_argument("--tracker_name", type=str,
-                        default=None, help="Project tracker name")
-    parser.add_argument("--push_to_hub", action="store_true",
-                        help="Whether or not to push the model to the Hub.")
-    parser.add_argument("--hub_token", type=str, default=None,
-                        help="The token to use to push to the Model Hub.")
+    parser.add_argument(
+        "--tracker_name", type=str, default=None, help="Project tracker name"
+    )
+    parser.add_argument(
+        "--push_to_hub",
+        action="store_true",
+        help="Whether or not to push the model to the Hub.",
+    )
+    parser.add_argument(
+        "--hub_token",
+        type=str,
+        default=None,
+        help="The token to use to push to the Model Hub.",
+    )
     parser.add_argument(
         "--hub_model_id",
         type=str,
@@ -439,12 +485,11 @@ def get_args():
         ),
     )
     parser.add_argument(
-        '--trainable_modules',
-        nargs='+',
-        help='Enter a list of trainable modules'
+        "--trainable_modules", nargs="+", help="Enter a list of trainable modules"
     )
-    parser.add_argument("--nccl_timeout", type=int, default=600,
-                        help="NCCL backend timeout in seconds.")
+    parser.add_argument(
+        "--nccl_timeout", type=int, default=600, help="NCCL backend timeout in seconds."
+    )
 
     return parser.parse_args()
 
@@ -458,8 +503,8 @@ def resize_mask(mask, latent, process_first_frame_only=True):
         first_frame_resized = F.interpolate(
             mask[:, :, 0:1, :, :],
             size=target_size,
-            mode='trilinear',
-            align_corners=False
+            mode="trilinear",
+            align_corners=False,
         )
 
         target_size = list(latent_size[2:])
@@ -468,20 +513,18 @@ def resize_mask(mask, latent, process_first_frame_only=True):
             remaining_frames_resized = F.interpolate(
                 mask[:, :, 1:, :, :],
                 size=target_size,
-                mode='trilinear',
-                align_corners=False
+                mode="trilinear",
+                align_corners=False,
             )
             resized_mask = torch.cat(
-                [first_frame_resized, remaining_frames_resized], dim=2)
+                [first_frame_resized, remaining_frames_resized], dim=2
+            )
         else:
             resized_mask = first_frame_resized
     else:
         target_size = list(latent_size[2:])
         resized_mask = F.interpolate(
-            mask,
-            size=target_size,
-            mode='trilinear',
-            align_corners=False
+            mask, size=target_size, mode="trilinear", align_corners=False
         )
     return resized_mask
 
@@ -553,7 +596,7 @@ def state_dict_prefix_replace(state_dict, replace_prefix, filter_keys=False):
     for rp in replace_prefix:
         replace = list(
             map(
-                lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp):])),
+                lambda a: (a, "{}{}".format(replace_prefix[rp], a[len(rp) :])),
                 filter(lambda a: a.startswith(rp), state_dict.keys()),
             )
         )
@@ -573,35 +616,46 @@ def module_size(module):
 
 
 def get_tiled_scale_steps(width, height, tile_x, tile_y, overlap):
-    return math.ceil((height / (tile_y - overlap))) * math.ceil((width / (tile_x - overlap)))
+    return math.ceil((height / (tile_y - overlap))) * math.ceil(
+        (width / (tile_x - overlap))
+    )
 
 
 @torch.inference_mode()
 def tiled_scale_multidim(
-    samples, function, tile=(64, 64), overlap=8, upscale_amount=4, out_channels=3, output_device="cpu", pbar=None
+    samples,
+    function,
+    tile=(64, 64),
+    overlap=8,
+    upscale_amount=4,
+    out_channels=3,
+    output_device="cpu",
+    pbar=None,
 ):
     dims = len(tile)
     print(f"samples dtype:{samples.dtype}")
     output = torch.empty(
-        [samples.shape[0], out_channels] +
-        list(map(lambda a: round(a * upscale_amount), samples.shape[2:])),
+        [samples.shape[0], out_channels]
+        + list(map(lambda a: round(a * upscale_amount), samples.shape[2:])),
         device=output_device,
     )
 
     for b in range(samples.shape[0]):
-        s = samples[b: b + 1]
+        s = samples[b : b + 1]
         out = torch.zeros(
-            [s.shape[0], out_channels] +
-            list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
+            [s.shape[0], out_channels]
+            + list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
             device=output_device,
         )
         out_div = torch.zeros(
-            [s.shape[0], out_channels] +
-            list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
+            [s.shape[0], out_channels]
+            + list(map(lambda a: round(a * upscale_amount), s.shape[2:])),
             device=output_device,
         )
 
-        for it in itertools.product(*map(lambda a: range(0, a[0], a[1] - overlap), zip(s.shape[2:], tile))):
+        for it in itertools.product(
+            *map(lambda a: range(0, a[0], a[1] - overlap), zip(s.shape[2:], tile))
+        ):
             s_in = s
             upscaled = []
 
@@ -633,7 +687,7 @@ def tiled_scale_multidim(
             if pbar is not None:
                 pbar.update(1)
 
-        output[b: b + 1] = out / out_div
+        output[b : b + 1] = out / out_div
     return output
 
 
@@ -649,8 +703,14 @@ def tiled_scale(
     pbar=None,
 ):
     return tiled_scale_multidim(
-        samples, function, (tile_y,
-                            tile_x), overlap, upscale_amount, out_channels, output_device, pbar
+        samples,
+        function,
+        (tile_y, tile_x),
+        overlap,
+        upscale_amount,
+        out_channels,
+        output_device,
+        pbar,
     )
 
 
@@ -662,11 +722,12 @@ def load_sd_upscale(ckpt, inf_device):
     return out
 
 
-def upscale(upscale_model, tensor: torch.Tensor, inf_device, output_device="cpu") -> torch.Tensor:
+def upscale(
+    upscale_model, tensor: torch.Tensor, inf_device, output_device="cpu"
+) -> torch.Tensor:
     memory_required = module_size(upscale_model.model)
     memory_required += (
-        (512 * 512 * 3) * tensor.element_size() *
-        max(upscale_model.scale, 1.0) * 384.0
+        (512 * 512 * 3) * tensor.element_size() * max(upscale_model.scale, 1.0) * 384.0
     )  # The 384.0 is an estimate of how much some of these models take, TODO: make it more accurate
     memory_required += tensor.nelement() * tensor.element_size()
     print(f"UPScaleMemory required: {memory_required / 1024 / 1024 / 1024} GB")
@@ -695,12 +756,13 @@ def upscale(upscale_model, tensor: torch.Tensor, inf_device, output_device="cpu"
     return s
 
 
-def upscale_batch_and_concatenate(upscale_model, latents, inf_device, output_device="cpu") -> torch.Tensor:
+def upscale_batch_and_concatenate(
+    upscale_model, latents, inf_device, output_device="cpu"
+) -> torch.Tensor:
     upscaled_latents = []
     for i in range(latents.size(0)):
         latent = latents[i]
-        upscaled_latent = upscale(
-            upscale_model, latent, inf_device, output_device)
+        upscaled_latent = upscale(upscale_model, latent, inf_device, output_device)
         upscaled_latents.append(upscaled_latent)
     return torch.stack(upscaled_latents)
 
@@ -718,7 +780,8 @@ class ProgressBar:
         self.total = total
         self.current = 0
         self.b_unit = tqdm.tqdm(
-            total=total, desc="ProgressBar context index: 0" if desc is None else desc)
+            total=total, desc="ProgressBar context index: 0" if desc is None else desc
+        )
 
     def update(self, value):
         if value > self.total:
@@ -726,7 +789,8 @@ class ProgressBar:
         self.current = value
         if self.b_unit is not None:
             self.b_unit.set_description(
-                "ProgressBar context index: {}".format(self.current))
+                "ProgressBar context index: {}".format(self.current)
+            )
             self.b_unit.refresh()
 
             self.b_unit.update(self.current)

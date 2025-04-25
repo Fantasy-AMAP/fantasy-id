@@ -1,15 +1,17 @@
-import cv2
 import math
-import numpy as np
-from PIL import Image
+from typing import List, Optional, Tuple, Union
 
+import cv2
+import numpy as np
 import torch
+from diffusers.models.embeddings import get_3d_rotary_pos_embed
+from diffusers.pipelines.cogvideo.pipeline_cogvideox import (
+    get_resize_crop_region_for_grid,
+)
+from PIL import Image
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms.functional import normalize, resize
 from transformers import T5EncoderModel, T5Tokenizer
-from typing import List, Optional, Tuple, Union
-from diffusers.models.embeddings import get_3d_rotary_pos_embed
-from diffusers.pipelines.cogvideo.pipeline_cogvideox import get_resize_crop_region_for_grid
 
 
 def tensor_to_pil(src_img_tensor):
@@ -21,7 +23,7 @@ def tensor_to_pil(src_img_tensor):
     img = img.astype(np.uint8)
     pil_image = Image.fromarray(img)
     return pil_image
-    
+
 
 def _get_t5_prompt_embeds(
     tokenizer: T5Tokenizer,
@@ -48,7 +50,9 @@ def _get_t5_prompt_embeds(
         text_input_ids = text_inputs.input_ids
     else:
         if text_input_ids is None:
-            raise ValueError("`text_input_ids` must be provided when the tokenizer is not specified.")
+            raise ValueError(
+                "`text_input_ids` must be provided when the tokenizer is not specified."
+            )
 
     prompt_embeds = text_encoder(text_input_ids.to(device))[0]
     prompt_embeds = prompt_embeds.to(dtype=dtype, device=device)
@@ -86,7 +90,13 @@ def encode_prompt(
 
 
 def compute_prompt_embeddings(
-    tokenizer, text_encoder, prompt, max_sequence_length, device, dtype, requires_grad: bool = False
+    tokenizer,
+    text_encoder,
+    prompt,
+    max_sequence_length,
+    device,
+    dtype,
+    requires_grad: bool = False,
 ):
     if requires_grad:
         prompt_embeds = encode_prompt(
@@ -128,7 +138,9 @@ def prepare_rotary_positional_embeddings(
     base_size_width = base_width // (vae_scale_factor_spatial * patch_size)
     base_size_height = base_height // (vae_scale_factor_spatial * patch_size)
 
-    grid_crops_coords = get_resize_crop_region_for_grid((grid_height, grid_width), base_size_width, base_size_height)
+    grid_crops_coords = get_resize_crop_region_for_grid(
+        (grid_height, grid_width), base_size_width, base_size_height
+    )
     freqs_cos, freqs_sin = get_3d_rotary_pos_embed(
         embed_dim=attention_head_dim,
         crops_coords=grid_crops_coords,
@@ -156,8 +168,8 @@ def img2tensor(imgs, bgr2rgb=True, float32=True):
 
     def _totensor(img, bgr2rgb, float32):
         if img.shape[2] == 3 and bgr2rgb:
-            if img.dtype == 'float64':
-                img = img.astype('float32')
+            if img.dtype == "float64":
+                img = img.astype("float32")
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = torch.from_numpy(img.transpose(2, 0, 1))
         if float32:
@@ -175,7 +187,11 @@ def to_gray(img):
     return x
 
 
-def draw_kps(image_pil, kps, color_list=[(255,0,0), (0,255,0), (0,0,255), (255,255,0), (255,0,255)]):
+def draw_kps(
+    image_pil,
+    kps,
+    color_list=[(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)],
+):
     stickwidth = 4
     limbSeq = np.array([[0, 2], [1, 2], [3, 2], [4, 2]])
     kps = np.array(kps)
@@ -191,7 +207,14 @@ def draw_kps(image_pil, kps, color_list=[(255,0,0), (0,255,0), (0,0,255), (255,2
         y = kps[index][:, 1]
         length = ((x[0] - x[1]) ** 2 + (y[0] - y[1]) ** 2) ** 0.5
         angle = math.degrees(math.atan2(y[0] - y[1], x[0] - x[1]))
-        polygon = cv2.ellipse2Poly((int(np.mean(x)), int(np.mean(y))), (int(length / 2), stickwidth), int(angle), 0, 360, 1)
+        polygon = cv2.ellipse2Poly(
+            (int(np.mean(x)), int(np.mean(y))),
+            (int(length / 2), stickwidth),
+            int(angle),
+            0,
+            360,
+            1,
+        )
         out_img = cv2.fillConvexPoly(out_img.copy(), polygon, color)
     out_img = (out_img * 0.6).astype(np.uint8)
 
@@ -204,7 +227,20 @@ def draw_kps(image_pil, kps, color_list=[(255,0,0), (0,255,0), (0,0,255), (255,2
     return out_img_pil
 
 
-def process_face_embeddings(face_helper, clip_vision_model, handler_ante, eva_transform_mean, eva_transform_std, app, device, weight_dtype, image, original_id_image=None, is_align_face=True, cal_uncond=False):
+def process_face_embeddings(
+    face_helper,
+    clip_vision_model,
+    handler_ante,
+    eva_transform_mean,
+    eva_transform_std,
+    app,
+    device,
+    weight_dtype,
+    image,
+    original_id_image=None,
+    is_align_face=True,
+    cal_uncond=False,
+):
     """
     Args:
         image: numpy rgb image, range [0, 255]
@@ -231,11 +267,12 @@ def process_face_embeddings(face_helper, clip_vision_model, handler_ante, eva_tr
             face_kps = face_helper.all_landmarks_5[0]
     except Exception as e:
         import time
-        cv2.imwrite(f'./data/bad_data/{time.time()}.png',image_bgr)
+
+        cv2.imwrite(f"./data/bad_data/{time.time()}.png", image_bgr)
         face_kps = None
     # face_helper.align_warp_face()
     # if len(face_helper.cropped_faces) == 0:
-        # raise RuntimeError('facexlib align face fail')
+    # raise RuntimeError('facexlib align face fail')
     # align_face = face_helper.cropped_faces[0]  # (512, 512, 3)  # RGB
 
     # incase insightface didn't detect face
@@ -243,7 +280,9 @@ def process_face_embeddings(face_helper, clip_vision_model, handler_ante, eva_tr
     #     print('fail to detect face using insightface, extract embedding on align face')
     id_ante_embedding = handler_ante.get_feat(image_bgr)
 
-    id_ante_embedding = torch.from_numpy(id_ante_embedding).to(device, weight_dtype)  # torch.Size([512])
+    id_ante_embedding = torch.from_numpy(id_ante_embedding).to(
+        device, weight_dtype
+    )  # torch.Size([512])
     if id_ante_embedding.ndim == 1:
         id_ante_embedding = id_ante_embedding.unsqueeze(0)  # torch.Size([1, 512])
 
@@ -265,15 +304,34 @@ def process_face_embeddings(face_helper, clip_vision_model, handler_ante, eva_tr
     #     input = input.to(device)
     #     return_face_features_image = return_face_features_image_2 = input
 
-    return_face_features_image = img2tensor(image).unsqueeze(0)/255.0
+    return_face_features_image = img2tensor(image).unsqueeze(0) / 255.0
     # transform img before sending to eva-clip-vit
-    face_features_image = resize(return_face_features_image, clip_vision_model.image_size,
-                                 InterpolationMode.BICUBIC).to(device)  # torch.Size([1, 3, 336, 336])
-    face_features_image = normalize(face_features_image, eva_transform_mean, eva_transform_std)
-    id_cond_vit, id_vit_hidden = clip_vision_model(face_features_image.to(weight_dtype), return_all_features=False, return_hidden=True, shuffle=False)  # torch.Size([1, 768]),  list(torch.Size([1, 577, 1024]))
+    face_features_image = resize(
+        return_face_features_image,
+        clip_vision_model.image_size,
+        InterpolationMode.BICUBIC,
+    ).to(
+        device
+    )  # torch.Size([1, 3, 336, 336])
+    face_features_image = normalize(
+        face_features_image, eva_transform_mean, eva_transform_std
+    )
+    id_cond_vit, id_vit_hidden = clip_vision_model(
+        face_features_image.to(weight_dtype),
+        return_all_features=False,
+        return_hidden=True,
+        shuffle=False,
+    )  # torch.Size([1, 768]),  list(torch.Size([1, 577, 1024]))
     id_cond_vit_norm = torch.norm(id_cond_vit, 2, 1, True)
     id_cond_vit = torch.div(id_cond_vit, id_cond_vit_norm)
 
-    id_cond = torch.cat([id_ante_embedding, id_cond_vit], dim=-1)  # torch.Size([1, 512]), torch.Size([1, 768])  ->  torch.Size([1, 1280])
+    id_cond = torch.cat(
+        [id_ante_embedding, id_cond_vit], dim=-1
+    )  # torch.Size([1, 512]), torch.Size([1, 768])  ->  torch.Size([1, 1280])
 
-    return id_cond, id_vit_hidden, return_face_features_image, face_kps    # torch.Size([1, 1280]), list(torch.Size([1, 577, 1024]))
+    return (
+        id_cond,
+        id_vit_hidden,
+        return_face_features_image,
+        face_kps,
+    )  # torch.Size([1, 1280]), list(torch.Size([1, 577, 1024]))

@@ -1,27 +1,26 @@
 # Copyright Alibaba Inc. All Rights Reserved.
 import inspect
 import math
-from typing import Callable, Dict, List, Optional, Tuple, Union
-
 import os
 import sys
-import PIL
-import numpy as np
-import cv2
-from PIL import Image
-import torch
-from transformers import T5EncoderModel, T5Tokenizer
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
+import cv2
+import numpy as np
+import PIL
+import torch
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.image_processor import PipelineImageInput
 from diffusers.models import AutoencoderKLCogVideoX, CogVideoXTransformer3DModel
 from diffusers.models.embeddings import get_3d_rotary_pos_embed
+from diffusers.pipelines.cogvideo.pipeline_output import CogVideoXPipelineOutput
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.schedulers import CogVideoXDDIMScheduler, CogVideoXDPMScheduler
 from diffusers.utils import logging, replace_example_docstring
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.video_processor import VideoProcessor
-from diffusers.pipelines.cogvideo.pipeline_output import CogVideoXPipelineOutput
+from PIL import Image
+from transformers import T5EncoderModel, T5Tokenizer
 
 from models.transformer_id import IDTransformer3DModel
 
@@ -52,7 +51,11 @@ EXAMPLE_DOC_STRING = """
 """
 
 
-def draw_kps(image_pil, kps, color_list=[(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)]):
+def draw_kps(
+    image_pil,
+    kps,
+    color_list=[(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255)],
+):
     stickwidth = 4
     limbSeq = np.array([[0, 2], [1, 2], [3, 2], [4, 2]])
     kps = np.array(kps)
@@ -68,8 +71,14 @@ def draw_kps(image_pil, kps, color_list=[(255, 0, 0), (0, 255, 0), (0, 0, 255), 
         y = kps[index][:, 1]
         length = ((x[0] - x[1]) ** 2 + (y[0] - y[1]) ** 2) ** 0.5
         angle = math.degrees(math.atan2(y[0] - y[1], x[0] - x[1]))
-        polygon = cv2.ellipse2Poly((int(np.mean(x)), int(np.mean(y))), (int(
-            length / 2), stickwidth), int(angle), 0, 360, 1)
+        polygon = cv2.ellipse2Poly(
+            (int(np.mean(x)), int(np.mean(y))),
+            (int(length / 2), stickwidth),
+            int(angle),
+            0,
+            360,
+            1,
+        )
         out_img = cv2.fillConvexPoly(out_img.copy(), polygon, color)
     out_img = (out_img * 0.6).astype(np.uint8)
 
@@ -83,14 +92,13 @@ def draw_kps(image_pil, kps, color_list=[(255, 0, 0), (0, 255, 0), (0, 0, 255), 
 
 
 def process_image(image, vae):
-    image_noise_sigma = torch.normal(
-        mean=-3.0, std=0.5, size=(1,), device=image.device)
+    image_noise_sigma = torch.normal(mean=-3.0, std=0.5, size=(1,), device=image.device)
     image_noise_sigma = torch.exp(image_noise_sigma).to(dtype=image.dtype)
-    noisy_image = torch.randn_like(
-        image) * image_noise_sigma[:, None, None, None, None]
+    noisy_image = torch.randn_like(image) * image_noise_sigma[:, None, None, None, None]
     input_image = image + noisy_image
     image_latent_dist = vae.encode(input_image).latent_dist
     return image_latent_dist
+
 
 # Similar to diffusers.pipelines.hunyuandit.pipeline_hunyuandit.get_resize_crop_region_for_grid
 
@@ -147,10 +155,12 @@ def retrieve_timesteps(
     """
     if timesteps is not None and sigmas is not None:
         raise ValueError(
-            "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+            "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values"
+        )
     if timesteps is not None:
         accepts_timesteps = "timesteps" in set(
-            inspect.signature(scheduler.set_timesteps).parameters.keys())
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accepts_timesteps:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -160,8 +170,9 @@ def retrieve_timesteps(
         timesteps = scheduler.timesteps
         num_inference_steps = len(timesteps)
     elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(
-            scheduler.set_timesteps).parameters.keys())
+        accept_sigmas = "sigmas" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accept_sigmas:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -178,7 +189,9 @@ def retrieve_timesteps(
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img.retrieve_latents
 def retrieve_latents(
-    encoder_output: torch.Tensor, generator: Optional[torch.Generator] = None, sample_mode: str = "sample"
+    encoder_output: torch.Tensor,
+    generator: Optional[torch.Generator] = None,
+    sample_mode: str = "sample",
 ):
     if hasattr(encoder_output, "latent_dist") and sample_mode == "sample":
         return encoder_output.latent_dist.sample(generator)
@@ -187,8 +200,7 @@ def retrieve_latents(
     elif hasattr(encoder_output, "latents"):
         return encoder_output.latents
     else:
-        raise AttributeError(
-            "Could not access latents of provided encoder_output")
+        raise AttributeError("Could not access latents of provided encoder_output")
 
 
 class IDPipeline(DiffusionPipeline):
@@ -241,20 +253,24 @@ class IDPipeline(DiffusionPipeline):
             scheduler=scheduler,
         )
         self.vae_scale_factor_spatial = (
-            2 ** (len(self.vae.config.block_out_channels) -
-                  1) if hasattr(self, "vae") and self.vae is not None else 8
+            2 ** (len(self.vae.config.block_out_channels) - 1)
+            if hasattr(self, "vae") and self.vae is not None
+            else 8
         )
         self.vae_scale_factor_temporal = (
-            self.vae.config.temporal_compression_ratio if hasattr(
-                self, "vae") and self.vae is not None else 4
+            self.vae.config.temporal_compression_ratio
+            if hasattr(self, "vae") and self.vae is not None
+            else 4
         )
         self.vae_scaling_factor_image = (
-            self.vae.config.scaling_factor if hasattr(
-                self, "vae") and self.vae is not None else 0.7
+            self.vae.config.scaling_factor
+            if hasattr(self, "vae") and self.vae is not None
+            else 0.7
         )
 
         self.video_processor = VideoProcessor(
-            vae_scale_factor=self.vae_scale_factor_spatial)
+            vae_scale_factor=self.vae_scale_factor_spatial
+        )
 
     # Copied from diffusers.pipelines.cogvideo.pipeline_cogvideox.CogVideoXPipeline._get_t5_prompt_embeds
     def _get_t5_prompt_embeds(
@@ -281,11 +297,15 @@ class IDPipeline(DiffusionPipeline):
         )
         text_input_ids = text_inputs.input_ids
         untruncated_ids = self.tokenizer(
-            prompt, padding="longest", return_tensors="pt").input_ids
+            prompt, padding="longest", return_tensors="pt"
+        ).input_ids
 
-        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
+        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
+            text_input_ids, untruncated_ids
+        ):
             removed_text = self.tokenizer.batch_decode(
-                untruncated_ids[:, max_sequence_length - 1: -1])
+                untruncated_ids[:, max_sequence_length - 1 : -1]
+            )
             logger.warning(
                 "The following part of your input was truncated because `max_sequence_length` is set to "
                 f" {max_sequence_length} tokens: {removed_text}"
@@ -298,7 +318,8 @@ class IDPipeline(DiffusionPipeline):
         _, seq_len, _ = prompt_embeds.shape
         prompt_embeds = prompt_embeds.repeat(1, num_videos_per_prompt, 1)
         prompt_embeds = prompt_embeds.view(
-            batch_size * num_videos_per_prompt, seq_len, -1)
+            batch_size * num_videos_per_prompt, seq_len, -1
+        )
 
         return prompt_embeds
 
@@ -360,9 +381,11 @@ class IDPipeline(DiffusionPipeline):
 
         if do_classifier_free_guidance and negative_prompt_embeds is None:
             negative_prompt = negative_prompt or ""
-            negative_prompt = batch_size * \
-                [negative_prompt] if isinstance(
-                    negative_prompt, str) else negative_prompt
+            negative_prompt = (
+                batch_size * [negative_prompt]
+                if isinstance(negative_prompt, str)
+                else negative_prompt
+            )
 
             if prompt is not None and type(prompt) is not type(negative_prompt):
                 raise TypeError(
@@ -419,28 +442,38 @@ class IDPipeline(DiffusionPipeline):
 
         if isinstance(generator, list):
             image_latents = [
-                retrieve_latents(self.vae.encode(image[i].unsqueeze(0)), generator[i]) for i in range(batch_size)
+                retrieve_latents(self.vae.encode(image[i].unsqueeze(0)), generator[i])
+                for i in range(batch_size)
             ]
             if kps_cond is not None:
                 kps_cond = kps_cond.unsqueeze(2)
                 kps_cond_latents = [
-                    retrieve_latents(self.vae.encode(kps_cond[i].unsqueeze(0)), generator[i]) for i in range(batch_size)
+                    retrieve_latents(
+                        self.vae.encode(kps_cond[i].unsqueeze(0)), generator[i]
+                    )
+                    for i in range(batch_size)
                 ]
         else:
-            image_latents = [retrieve_latents(self.vae.encode(
-                img.unsqueeze(0)), generator) for img in image]
+            image_latents = [
+                retrieve_latents(self.vae.encode(img.unsqueeze(0)), generator)
+                for img in image
+            ]
             if kps_cond is not None:
                 kps_cond = kps_cond.unsqueeze(2)
-                kps_cond_latents = [retrieve_latents(self.vae.encode(
-                    img.unsqueeze(0)), generator) for img in kps_cond]
+                kps_cond_latents = [
+                    retrieve_latents(self.vae.encode(img.unsqueeze(0)), generator)
+                    for img in kps_cond
+                ]
 
-        image_latents = torch.cat(image_latents, dim=0).to(
-            dtype).permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
+        image_latents = (
+            torch.cat(image_latents, dim=0).to(dtype).permute(0, 2, 1, 3, 4)
+        )  # [B, F, C, H, W]
         image_latents = self.vae_scaling_factor_image * image_latents
 
         if kps_cond is not None:
-            kps_cond_latents = torch.cat(kps_cond_latents, dim=0).to(
-                dtype).permute(0, 2, 1, 3, 4)  # [B, F, C, H, W]
+            kps_cond_latents = (
+                torch.cat(kps_cond_latents, dim=0).to(dtype).permute(0, 2, 1, 3, 4)
+            )  # [B, F, C, H, W]
             kps_cond_latents = self.vae_scaling_factor_image * kps_cond_latents
 
             padding_shape = (
@@ -462,13 +495,15 @@ class IDPipeline(DiffusionPipeline):
         latent_padding = torch.zeros(padding_shape, device=device, dtype=dtype)
         if kps_cond is not None:
             image_latents = torch.cat(
-                [image_latents, kps_cond_latents, latent_padding], dim=1)
+                [image_latents, kps_cond_latents, latent_padding], dim=1
+            )
         else:
             image_latents = torch.cat([image_latents, latent_padding], dim=1)
 
         if latents is None:
             latents = randn_tensor(
-                shape, generator=generator, device=device, dtype=dtype)
+                shape, generator=generator, device=device, dtype=dtype
+            )
         else:
             latents = latents.to(device)
 
@@ -488,11 +523,10 @@ class IDPipeline(DiffusionPipeline):
     # Copied from diffusers.pipelines.animatediff.pipeline_animatediff_video2video.AnimateDiffVideoToVideoPipeline.get_timesteps
     def get_timesteps(self, num_inference_steps, timesteps, strength, device):
         # get the original timestep using init_timestep
-        init_timestep = min(
-            int(num_inference_steps * strength), num_inference_steps)
+        init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
 
         t_start = max(num_inference_steps - init_timestep, 0)
-        timesteps = timesteps[t_start * self.scheduler.order:]
+        timesteps = timesteps[t_start * self.scheduler.order :]
 
         return timesteps, num_inference_steps - t_start
 
@@ -503,15 +537,17 @@ class IDPipeline(DiffusionPipeline):
         # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
         # and should be between [0, 1]
 
-        accepts_eta = "eta" in set(inspect.signature(
-            self.scheduler.step).parameters.keys())
+        accepts_eta = "eta" in set(
+            inspect.signature(self.scheduler.step).parameters.keys()
+        )
         extra_step_kwargs = {}
         if accepts_eta:
             extra_step_kwargs["eta"] = eta
 
         # check if the scheduler accepts generator
         accepts_generator = "generator" in set(
-            inspect.signature(self.scheduler.step).parameters.keys())
+            inspect.signature(self.scheduler.step).parameters.keys()
+        )
         if accepts_generator:
             extra_step_kwargs["generator"] = generator
         return extra_step_kwargs
@@ -540,10 +576,12 @@ class IDPipeline(DiffusionPipeline):
 
         if height % 8 != 0 or width % 8 != 0:
             raise ValueError(
-                f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
+                f"`height` and `width` have to be divisible by 8 but are {height} and {width}."
+            )
 
         if callback_on_step_end_tensor_inputs is not None and not all(
-            k in self._callback_tensor_inputs for k in callback_on_step_end_tensor_inputs
+            k in self._callback_tensor_inputs
+            for k in callback_on_step_end_tensor_inputs
         ):
             raise ValueError(
                 f"`callback_on_step_end_tensor_inputs` has to be in {self._callback_tensor_inputs}, but found {[k for k in callback_on_step_end_tensor_inputs if k not in self._callback_tensor_inputs]}"
@@ -557,9 +595,12 @@ class IDPipeline(DiffusionPipeline):
             raise ValueError(
                 "Provide either `prompt` or `prompt_embeds`. Cannot leave both `prompt` and `prompt_embeds` undefined."
             )
-        elif prompt is not None and (not isinstance(prompt, str) and not isinstance(prompt, list)):
+        elif prompt is not None and (
+            not isinstance(prompt, str) and not isinstance(prompt, list)
+        ):
             raise ValueError(
-                f"`prompt` has to be of type `str` or `list` but is {type(prompt)}")
+                f"`prompt` has to be of type `str` or `list` but is {type(prompt)}"
+            )
 
         if prompt is not None and negative_prompt_embeds is not None:
             raise ValueError(
@@ -592,7 +633,8 @@ class IDPipeline(DiffusionPipeline):
         r"""Disable QKV projection fusion if enabled."""
         if not self.fusing_transformer:
             logger.warning(
-                "The Transformer was not initially fused for QKV projections. Doing nothing.")
+                "The Transformer was not initially fused for QKV projections. Doing nothing."
+            )
         else:
             self.transformer.unfuse_qkv_projections()
             self.fusing_transformer = False
@@ -605,14 +647,18 @@ class IDPipeline(DiffusionPipeline):
         num_frames: int,
         device: torch.device,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        grid_height = height // (self.vae_scale_factor_spatial *
-                                 self.transformer.config.patch_size)
-        grid_width = width // (self.vae_scale_factor_spatial *
-                               self.transformer.config.patch_size)
-        base_size_width = 720 // (self.vae_scale_factor_spatial *
-                                  self.transformer.config.patch_size)
-        base_size_height = 480 // (self.vae_scale_factor_spatial *
-                                   self.transformer.config.patch_size)
+        grid_height = height // (
+            self.vae_scale_factor_spatial * self.transformer.config.patch_size
+        )
+        grid_width = width // (
+            self.vae_scale_factor_spatial * self.transformer.config.patch_size
+        )
+        base_size_width = 720 // (
+            self.vae_scale_factor_spatial * self.transformer.config.patch_size
+        )
+        base_size_height = 480 // (
+            self.vae_scale_factor_spatial * self.transformer.config.patch_size
+        )
 
         grid_crops_coords = get_resize_crop_region_for_grid(
             (grid_height, grid_width), base_size_width, base_size_height
@@ -656,16 +702,18 @@ class IDPipeline(DiffusionPipeline):
         use_dynamic_cfg: bool = False,
         num_videos_per_prompt: int = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator,
-                                  List[torch.Generator]]] = None,
+        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
         latents: Optional[torch.FloatTensor] = None,
         prompt_embeds: Optional[torch.FloatTensor] = None,
         negative_prompt_embeds: Optional[torch.FloatTensor] = None,
         output_type: str = "pil",
         return_dict: bool = True,
         callback_on_step_end: Optional[
-            Union[Callable[[int, int, Dict], None],
-                  PipelineCallback, MultiPipelineCallbacks]
+            Union[
+                Callable[[int, int, Dict], None],
+                PipelineCallback,
+                MultiPipelineCallbacks,
+            ]
         ] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         max_sequence_length: int = 226,
@@ -803,20 +851,20 @@ class IDPipeline(DiffusionPipeline):
             device=device,
         )
         if do_classifier_free_guidance:
-            prompt_embeds = torch.cat(
-                [negative_prompt_embeds, prompt_embeds], dim=0)
+            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
 
         # 4. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(
-            self.scheduler, num_inference_steps, device, timesteps)
+            self.scheduler, num_inference_steps, device, timesteps
+        )
         self._num_timesteps = len(timesteps)
 
         # 5. Prepare latents
         if kps_cond is not None:
             kps_cond = draw_kps(image, kps_cond)
-            kps_cond = self.video_processor.preprocess(kps_cond, height=height, width=width).to(
-                device, dtype=prompt_embeds.dtype
-            )
+            kps_cond = self.video_processor.preprocess(
+                kps_cond, height=height, width=width
+            ).to(device, dtype=prompt_embeds.dtype)
 
         image = self.video_processor.preprocess(image, height=height, width=width).to(
             device, dtype=prompt_embeds.dtype
@@ -834,7 +882,7 @@ class IDPipeline(DiffusionPipeline):
             device,
             generator,
             latents,
-            kps_cond
+            kps_cond,
         )
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
@@ -843,14 +891,16 @@ class IDPipeline(DiffusionPipeline):
         # 7. Create rotary embeds if required
         image_rotary_emb = (
             self._prepare_rotary_positional_embeddings(
-                height, width, latents.size(1), device)
+                height, width, latents.size(1), device
+            )
             if self.transformer.config.use_rotary_positional_embeddings
             else None
         )
 
         # 8. Denoising loop
         num_warmup_steps = max(
-            len(timesteps) - num_inference_steps * self.scheduler.order, 0)
+            len(timesteps) - num_inference_steps * self.scheduler.order, 0
+        )
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             # for DPM-solver++
@@ -859,15 +909,21 @@ class IDPipeline(DiffusionPipeline):
                 if self.interrupt:
                     continue
 
-                latent_model_input = torch.cat(
-                    [latents] * 2) if do_classifier_free_guidance else latents
+                latent_model_input = (
+                    torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                )
                 latent_model_input = self.scheduler.scale_model_input(
-                    latent_model_input, t)
+                    latent_model_input, t
+                )
 
-                latent_image_input = torch.cat(
-                    [image_latents] * 2) if do_classifier_free_guidance else image_latents
+                latent_image_input = (
+                    torch.cat([image_latents] * 2)
+                    if do_classifier_free_guidance
+                    else image_latents
+                )
                 latent_model_input = torch.cat(
-                    [latent_model_input, latent_image_input], dim=2)
+                    [latent_model_input, latent_image_input], dim=2
+                )
 
                 # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
                 timestep = t.expand(latent_model_input.shape[0])
@@ -881,25 +937,37 @@ class IDPipeline(DiffusionPipeline):
                     return_dict=False,
                     id_vit_hidden=id_vit_hidden,
                     id_cond=id_cond,
-                    extra_face=extra_face
+                    extra_face=extra_face,
                 )[0]
                 noise_pred = noise_pred.float()
 
                 # perform guidance
                 if use_dynamic_cfg:
                     self._guidance_scale = 1 + guidance_scale * (
-                        (1 - math.cos(math.pi * ((num_inference_steps -
-                         t.item()) / num_inference_steps) ** 5.0)) / 2
+                        (
+                            1
+                            - math.cos(
+                                math.pi
+                                * (
+                                    (num_inference_steps - t.item())
+                                    / num_inference_steps
+                                )
+                                ** 5.0
+                            )
+                        )
+                        / 2
                     )
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * \
-                        (noise_pred_text - noise_pred_uncond)
+                    noise_pred = noise_pred_uncond + self.guidance_scale * (
+                        noise_pred_text - noise_pred_uncond
+                    )
 
                 # compute the previous noisy sample x_t -> x_t-1
                 if not isinstance(self.scheduler, CogVideoXDPMScheduler):
                     latents = self.scheduler.step(
-                        noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                        noise_pred, t, latents, **extra_step_kwargs, return_dict=False
+                    )[0]
                 else:
                     latents, old_pred_original_sample = self.scheduler.step(
                         noise_pred,
@@ -917,22 +985,24 @@ class IDPipeline(DiffusionPipeline):
                     callback_kwargs = {}
                     for k in callback_on_step_end_tensor_inputs:
                         callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(
-                        self, i, t, callback_kwargs)
+                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
 
                     latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop(
-                        "prompt_embeds", prompt_embeds)
+                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
                     negative_prompt_embeds = callback_outputs.pop(
-                        "negative_prompt_embeds", negative_prompt_embeds)
+                        "negative_prompt_embeds", negative_prompt_embeds
+                    )
 
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
 
         if not output_type == "latent":
             video = self.decode_latents(latents)
             video = self.video_processor.postprocess_video(
-                video=video, output_type=output_type)
+                video=video, output_type=output_type
+            )
         else:
             video = latents
 

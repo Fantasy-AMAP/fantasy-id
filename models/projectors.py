@@ -17,6 +17,7 @@ from transformers.models.deformable_detr import DeformableDetrConfig
 from transformers.utils import logging
 from transformers.utils.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
+
 def check_local_file(model_name_or_path):
     cache_dir = get_cache_dir()
     file_name = os.path.join(
@@ -35,13 +36,15 @@ class HoneybeeVisionConfig(PretrainedConfig):
         self,
         pretrained_vision_name_or_path: str = "openai/clip-vit-large-patch14",
         image_size: int = 224,
-        image_mean = OPENAI_CLIP_MEAN,
-        image_std = OPENAI_CLIP_STD,
+        image_mean=OPENAI_CLIP_MEAN,
+        image_std=OPENAI_CLIP_STD,
         hidden_size: int = None,
         encoder_type: str = "openai.clip",
         **kwargs,
     ):
-        assert hidden_size is not None, "hidden_size is required for HoneybeeVisionConfig"
+        assert (
+            hidden_size is not None
+        ), "hidden_size is required for HoneybeeVisionConfig"
         super().__init__(**kwargs)
         self.pretrained_vision_name_or_path = pretrained_vision_name_or_path
         self.image_size = image_size
@@ -52,13 +55,18 @@ class HoneybeeVisionConfig(PretrainedConfig):
 
     @staticmethod
     def from_exp_config(vision_config: dict):
-        """Build MLLVisionConfig from exp config (hydra conifg)
-        """
-        pretrained_vision_name_or_path = vision_config.get("pretrained_vision_name_or_path")
+        """Build MLLVisionConfig from exp config (hydra conifg)"""
+        pretrained_vision_name_or_path = vision_config.get(
+            "pretrained_vision_name_or_path"
+        )
         if pretrained_vision_name_or_path is None:
-            raise ValueError("pretrained_vision_name_or_path is required for vision config.")
+            raise ValueError(
+                "pretrained_vision_name_or_path is required for vision config."
+            )
 
-        vm_local_files_only, vm_file_name = check_local_file(pretrained_vision_name_or_path)
+        vm_local_files_only, vm_file_name = check_local_file(
+            pretrained_vision_name_or_path
+        )
         encoder_type = vision_config["encoder_type"]
         if encoder_type == "openai.clip":
             v_enc_config = CLIPVisionConfig.from_pretrained(
@@ -66,7 +74,9 @@ class HoneybeeVisionConfig(PretrainedConfig):
                 local_files_only=vm_local_files_only,
             )
             v_enc_config = v_enc_config.to_dict()
-            if "encoder_type" not in v_enc_config:  # for eval on previously trained models
+            if (
+                "encoder_type" not in v_enc_config
+            ):  # for eval on previously trained models
                 v_enc_config["encoder_type"] = encoder_type
         else:
             raise NotImplementedError()
@@ -174,7 +184,10 @@ class HoneybeeConfig(PretrainedConfig):
 
     @property
     def num_visual_tokens(self):
-        return self.projector_config.num_query_tokens + self.projector_config.num_eos_tokens
+        return (
+            self.projector_config.num_query_tokens
+            + self.projector_config.num_eos_tokens
+        )
 
     @property
     def hidden_size(self):
@@ -194,7 +207,7 @@ class HoneybeeConfig(PretrainedConfig):
                 output[k] = v.to_dict()
 
         return output
-    
+
     @classmethod
     def from_dict(cls, config_dict, **kwargs):
         # update old config
@@ -204,16 +217,23 @@ class HoneybeeConfig(PretrainedConfig):
         if "visual_projector_config" in config_dict:
             config_dict["projector_config"] = config_dict.pop("visual_projector_config")
             config_dict["projector_config"].pop("encoder_hidden_size")
-            config_dict["projector_config"]["num_query_tokens"] = config_dict.pop("num_query_tokens")
+            config_dict["projector_config"]["num_query_tokens"] = config_dict.pop(
+                "num_query_tokens"
+            )
 
         return super().from_dict(config_dict, **kwargs)
 
+
 def build_pos_embeds(
-    config: HoneybeeVisualProjectorConfig, num_input_tokens: int, vision_hidden_size: int
+    config: HoneybeeVisualProjectorConfig,
+    num_input_tokens: int,
+    vision_hidden_size: int,
 ):
     # pos emb
     if config.pos_emb:
-        pos_emb = torch.nn.Parameter(torch.zeros(1, num_input_tokens, vision_hidden_size))
+        pos_emb = torch.nn.Parameter(
+            torch.zeros(1, num_input_tokens, vision_hidden_size)
+        )
         nn.init.trunc_normal_(pos_emb, mean=0.0, std=0.02)
     else:
         pos_emb = None
@@ -225,7 +245,9 @@ def build_eos_tokens(config: HoneybeeVisualProjectorConfig, output_hidden_size: 
     # think tokens
     num_eos_tokens = config.num_eos_tokens
     if num_eos_tokens:
-        eos_tokens = torch.nn.Parameter(torch.randn(1, num_eos_tokens, output_hidden_size))
+        eos_tokens = torch.nn.Parameter(
+            torch.randn(1, num_eos_tokens, output_hidden_size)
+        )
         nn.init.trunc_normal_(eos_tokens, mean=0.0, std=config.initializer_range)
     else:
         eos_tokens = None
@@ -258,7 +280,7 @@ class Projector(nn.Module):
         num_input_tokens: int,
     ):
         super().__init__()
-        num_input_tokens=576
+        num_input_tokens = 576
         cabs_config = {
             "projector_type": "d-abs",
             "num_eos_tokens": 0,
@@ -284,7 +306,9 @@ class Projector(nn.Module):
         self.eos_tokens = build_eos_tokens(config, config.output_hidden_size)
 
         # pos emb
-        self.pos_emb = build_pos_embeds(config, num_input_tokens, config.encoder_hidden_size)
+        self.pos_emb = build_pos_embeds(
+            config, num_input_tokens, config.encoder_hidden_size
+        )
 
         self.prenorm = build_prenorm(config)
 
@@ -316,7 +340,7 @@ class Projector(nn.Module):
 
         output = BaseModelOutput(last_hidden_state=x)
         return output
-    
+
     # def _load_from_state_dict(self, state_dict, *args, **kwargs):
     #     # update old ckpt compatible with current code
     #     pos_emb = state_dict["abstractor.pos_emb"]
@@ -353,6 +377,7 @@ class ConvProjector(Projector):
 
 class CAbstractor(ConvProjector):
     """C-Abstractor based on RegBlock"""
+
     def build_net(self):
         encoder_hidden_size = self.config.encoder_hidden_size
         hidden_size = self.config.hidden_size
@@ -361,8 +386,8 @@ class CAbstractor(ConvProjector):
         mlp_depth = self.config.mlp_depth
 
         n_queries = self.config.num_query_tokens
-        assert (n_queries ** 0.5).is_integer(), "n_queries must be square number"
-        hw = int(n_queries ** 0.5)
+        assert (n_queries**0.5).is_integer(), "n_queries must be square number"
+        hw = int(n_queries**0.5)
 
         RegBlock = partial(
             RegStage,

@@ -70,7 +70,7 @@ template <typename scalar_t> struct point
         np.y = s * this->y;
         return np;
     };
-};          
+};
 
 template <typename scalar_t>
 __device__ __forceinline__ bool check_pixel_inside(const scalar_t *w) {
@@ -79,13 +79,13 @@ __device__ __forceinline__ bool check_pixel_inside(const scalar_t *w) {
 
 template <typename scalar_t>
 __device__ __forceinline__ void barycentric_weight(scalar_t *w,  point<scalar_t> p, point<scalar_t> p0,  point<scalar_t> p1,  point<scalar_t> p2) {
-    
+
     // vectors
     point<scalar_t> v0, v1, v2;
     scalar_t s = p.dot(p);
-    v0 = p2 - p0; 
-    v1 = p1 - p0; 
-    v2 = p - p0; 
+    v0 = p2 - p0;
+    v1 = p1 - p0;
+    v2 = p - p0;
 
     // dot products
     scalar_t dot00 = v0.dot(v0); //v0.x * v0.x + v0.y * v0.y //np.dot(v0.T, v0)
@@ -116,8 +116,8 @@ __global__ void forward_rasterize_cuda_kernel(
         const scalar_t* __restrict__ face_vertices, //[bz, nf, 3, 3]
         scalar_t*  depth_buffer,
         int*  triangle_buffer,
-        scalar_t*  baryw_buffer,        
-        int batch_size, int h, int w, 
+        scalar_t*  baryw_buffer,
+        int batch_size, int h, int w,
         int ntri) {
 
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -132,7 +132,7 @@ __global__ void forward_rasterize_cuda_kernel(
     p0.x = face[0]; p0.y=face[1];
     p1.x = face[3]; p1.y=face[4];
     p2.x = face[6]; p2.y=face[7];
-    
+
     int x_min = max((int)ceil(min(p0.x, min(p1.x, p2.x))), 0);
     int x_max = min((int)floor(max(p0.x, max(p1.x, p2.x))), w - 1);
     int y_min = max((int)ceil(min(p0.y, min(p1.y, p2.y))), 0);
@@ -170,8 +170,8 @@ __global__ void forward_rasterize_colors_cuda_kernel(
         const scalar_t* __restrict__ face_colors, //[bz, nf, 3, 3]
         scalar_t*  depth_buffer,
         int*  triangle_buffer,
-        scalar_t*  images,        
-        int batch_size, int h, int w, 
+        scalar_t*  images,
+        int batch_size, int h, int w,
         int ntri) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= batch_size * ntri) {
@@ -223,7 +223,7 @@ __global__ void forward_rasterize_colors_cuda_kernel(
     }
 
 }
-    
+
 }
 
 std::vector<at::Tensor> forward_rasterize_cuda(
@@ -262,7 +262,7 @@ std::vector<at::Tensor> forward_rasterize_cuda(
         ntri);
         }));
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) 
+    if (err != cudaSuccess)
             printf("Error in forward_rasterize_cuda_kernel: %s\n", cudaGetErrorString(err));
 
     return {depth_buffer, triangle_buffer, baryw_buffer};
@@ -284,7 +284,7 @@ std::vector<at::Tensor> forward_rasterize_colors_cuda(
     // print(channel_size)
     const int threads = 512;
     const dim3 blocks_1 ((batch_size * ntri - 1) / threads +1);
-    //initial 
+    //initial
 
     AT_DISPATCH_FLOATING_TYPES(face_vertices.type(), "forward_rasterize_colors_cuda", ([&] {
       forward_rasterize_colors_cuda_kernel<scalar_t><<<blocks_1, threads>>>(
@@ -296,7 +296,7 @@ std::vector<at::Tensor> forward_rasterize_colors_cuda(
         batch_size, h, w,
         ntri);
       }));
-    // better to do it twice 
+    // better to do it twice
     // AT_DISPATCH_FLOATING_TYPES(face_vertices.type(), "forward_rasterize_colors_cuda", ([&] {
     //     forward_rasterize_colors_cuda_kernel<scalar_t><<<blocks_1, threads>>>(
     //       face_vertices.data<scalar_t>(),
@@ -308,12 +308,8 @@ std::vector<at::Tensor> forward_rasterize_colors_cuda(
     //       ntri);
     //     }));
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) 
+    if (err != cudaSuccess)
             printf("Error in forward_rasterize_cuda_kernel: %s\n", cudaGetErrorString(err));
 
     return {depth_buffer, triangle_buffer, images};
 }
-
-
-
-
